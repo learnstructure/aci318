@@ -36,6 +36,11 @@ dev = [
 where = ["."]
 include = ["aci318*"]
 
+[tool.pytest.ini_options]
+# Adds the project root to sys.path so 'import aci318' works in tests.
+# For scripts/examples outside of pytest, run: pip install -e .
+pythonpath = ["."]
+
 [tool.black]
 line-length = 88
 target-version = ['py311']
