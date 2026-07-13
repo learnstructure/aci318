@@ -1,0 +1,3 @@
+"""
+Footing reinforcement detailing.
+"""
