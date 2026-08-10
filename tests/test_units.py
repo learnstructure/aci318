@@ -1,4 +1,4 @@
-import pytest
+import unittest
 from aci318.utils.units import (
     convert_force, 
     convert_length, 
@@ -8,25 +8,28 @@ from aci318.utils.units import (
     MM_TO_IN
 )
 
-def test_length_conversion():
-    assert convert_length(1.0, "in", "mm") == pytest.approx(25.4)
-    assert convert_length(25.4, "mm", "in") == pytest.approx(1.0)
-    assert convert_length(1.0, "ft", "in") == pytest.approx(12.0)
-    assert convert_length(12.0, "in", "ft") == pytest.approx(1.0)
+
+class TestUnits(unittest.TestCase):
+    def test_length_conversion(self):
+        self.assertAlmostEqual(convert_length(1.0, "in", "mm"), 25.4, places=2)
+        self.assertAlmostEqual(convert_length(25.4, "mm", "in"), 1.0, places=2)
+        self.assertAlmostEqual(convert_length(1.0, "ft", "in"), 12.0, places=2)
+        self.assertAlmostEqual(convert_length(12.0, "in", "ft"), 1.0, places=2)
+
+    def test_force_conversion(self):
+        self.assertAlmostEqual(convert_force(1.0, "kip", "lb"), 1000.0, places=2)
+        self.assertAlmostEqual(convert_force(1000.0, "lb", "kip"), 1.0, places=2)
+        self.assertAlmostEqual(convert_force(1.0, "kip", "kn"), 4.44822, delta=1e-3)
+
+    def test_stress_conversion(self):
+        self.assertAlmostEqual(convert_stress(4.0, "ksi", "psi"), 4000.0, places=2)
+        self.assertAlmostEqual(convert_stress(4000.0, "psi", "ksi"), 4.0, places=2)
+        self.assertAlmostEqual(convert_stress(1.0, "ksi", "mpa"), 6.89476, delta=1e-3)
+
+    def test_moment_conversion(self):
+        self.assertAlmostEqual(convert_moment(12.0, "kip-in", "kip-ft"), 1.0, places=2)
+        self.assertAlmostEqual(convert_moment(1.0, "kip-ft", "kip-in"), 12.0, places=2)
 
 
-def test_force_conversion():
-    assert convert_force(1.0, "kip", "lb") == pytest.approx(1000.0)
-    assert convert_force(1000.0, "lb", "kip") == pytest.approx(1.0)
-    assert convert_force(1.0, "kip", "kn") == pytest.approx(4.44822, abs=1e-3)
-
-
-def test_stress_conversion():
-    assert convert_stress(4.0, "ksi", "psi") == pytest.approx(4000.0)
-    assert convert_stress(4000.0, "psi", "ksi") == pytest.approx(4.0)
-    assert convert_stress(1.0, "ksi", "mpa") == pytest.approx(6.89476, abs=1e-3)
-
-
-def test_moment_conversion():
-    assert convert_moment(12.0, "kip-in", "kip-ft") == pytest.approx(1.0)
-    assert convert_moment(1.0, "kip-ft", "kip-in") == pytest.approx(12.0)
+if __name__ == "__main__":
+    unittest.main()

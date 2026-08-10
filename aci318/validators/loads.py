@@ -1,15 +1,23 @@
 """
-Load validation functions.
+Validators for load effects and design actions.
 """
-from typing import Any
 
-def validate_load_effects(load_effects: Any) -> None:
-    """Validate that load effects is a valid LoadEffects object."""
-    # Check that required attributes are present
-    required_attrs = ["Pu", "Mu", "Vu", "Tu"]
-    for attr in required_attrs:
-        if not hasattr(load_effects, attr):
-            raise TypeError(f"Load effects object must have a '{attr}' attribute.")
-        val = getattr(load_effects, attr)
-        if not isinstance(val, (int, float)):
-            raise TypeError(f"Load effect '{attr}' must be numeric, got {type(val)}")
+from aci318.loads.load_effects import LoadEffects
+from aci318.utils.exceptions import ACI318Error
+
+
+def validate_load_effects(loads: LoadEffects) -> None:
+    """
+    Validate load effects dataclass inputs.
+    
+    Args:
+        loads: LoadEffects instance containing Pu, Mu, Vu, Tu.
+        
+    Raises:
+        ACI318Error: If load inputs contain NaN or infinite values.
+    """
+    import math
+
+    for name, val in [("Pu", loads.Pu), ("Mu", loads.Mu), ("Vu", loads.Vu), ("Tu", loads.Tu)]:
+        if math.isnan(val) or math.isinf(val):
+            raise ACI318Error(f"Load effect {name} contains invalid numeric value: {val}")

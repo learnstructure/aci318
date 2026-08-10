@@ -1,12 +1,26 @@
 import math
-
 from aci318.loads.load_effects import LoadEffects
 from aci318.results.shear import ShearResult
 from aci318.strength.base import StrengthChecker
+from aci318.validators.loads import validate_load_effects
 
 
 class ShearStrength(StrengthChecker):
-    """Modular shear strength checker for reinforced concrete members."""
+    """
+    Modular shear strength checker for reinforced concrete members (ACI 318-19 §22.5 & §9.6.3).
+    
+    Equations:
+        Nominal Shear Capacity Vn:
+            Vn = Vc + Vs
+            phi_Vn = phi_v * Vn  (phi_v = 0.75)
+            
+        Concrete Shear Capacity Vc (ACI 318-19 Table 22.5.5.1):
+            Vc = [2 * lambda * sqrt(f'c) + Nu / (6 * Ag)] * bw * d / 1000
+            
+        Stirrup Shear Capacity Vs (ACI 318-19 §22.5.8.5.3):
+            Vs = (Av * fyt * d) / s
+            Vs_max = 8 * sqrt(f'c) * bw * d / 1000
+    """
 
     def __init__(self, section, code, av: float = 0.22, s: float = 12.0, fy_shear: float = 60.0) -> None:
         super().__init__(section, code)
@@ -15,52 +29,81 @@ class ShearStrength(StrengthChecker):
         self.fy_shear = fy_shear
 
     def check(self, loads: LoadEffects) -> ShearResult:
-        b = self.section.b
+        """
+        Perform shear strength check for given load effects.
+        
+        Args:
+            loads: LoadEffects instance containing Vu (kip), Pu (kip).
+            
+        Returns:
+            ShearResult dataclass.
+        """
+        validate_load_effects(loads)
+
+        bw = getattr(self.section, "b_w", getattr(self.section, "b", 12.0))
+        h = self.section.h
         fc = self.section.concrete.fc
-        As, d = self.section.tension_steel
-        if d == 0.0:
-            d = self.section.h - 2.5
-
-        lambda_val = self.code.get_lambda_(self.section.concrete)
         fc_psi = fc * 1000.0
-        vc_lb = 2.0 * lambda_val * math.sqrt(fc_psi) * b * d
-        vc = vc_lb / 1000.0
 
-        if self.s > 0 and self.av > 0:
-            vs = self.av * self.fy_shear * d / self.s
+        As, d = self.section.tension_steel
+        if d <= 0.0:
+            d = max(h - 2.5, 1.0)
+
+        rho_w = As / (bw * d) if (bw * d) > 0 else 0.01
+        Ag = getattr(self.section, "gross_area", bw * h)
+        lambda_val = self.code.get_lambda_(self.section.concrete)
+
+        # Minimum shear steel area requirement (ACI 318-19 §9.6.3.3)
+        denom = max(self.fy_shear * 1000.0, 1.0)
+        av_min_per_in = max(0.75 * math.sqrt(fc_psi), 50.0) * bw / denom
+        av_min = av_min_per_in * self.s if self.s > 0 else 0.0
+
+        Vc = self.code.get_vc(
+            f_c=fc,
+            b_w=bw,
+            d=d,
+            N_u=loads.Pu,
+            A_g=Ag,
+            A_v=self.av,
+            A_v_min=av_min,
+            lambda_val=lambda_val,
+            rho_w=rho_w,
+        )
+
+        if self.s > 0.0 and self.av > 0.0:
+            Vs = (self.av * self.fy_shear * d) / self.s
         else:
-            vs = 0.0
+            Vs = 0.0
 
-        vn = vc + vs
-        phi = self.code.get_phi_shear()
-        phi_vn = phi * vn
-
+        vs_max = (8.0 * math.sqrt(fc_psi) * bw * d) / 1000.0
         status = "Passed"
         messages = []
-        vs_max = 8.0 * math.sqrt(fc_psi) * b * d / 1000.0
-        if vs > vs_max:
-            status = "Failed"
-            messages.append(f"Nominal shear strength provided by stirrups Vs ({vs:.3f} kip) exceeds maximum allowed Vs_max ({vs_max:.3f} kip).")
 
-        result = ShearResult(
-            vn_concrete=vc,
-            vn_steel=vs,
+        if Vs > vs_max:
+            status = "Failed"
+            messages.append(f"Stirrup shear strength Vs ({Vs:.2f} kip) exceeds maximum allowed Vs_max ({vs_max:.2f} kip).")
+
+        vn = Vc + Vs
+        phi_v = self.code.get_phi_shear()
+        phi_vn = phi_v * vn
+
+        demand = max(abs(loads.Vu), 0.0)
+        capacity = max(phi_vn, 0.0)
+        ratio = demand / capacity if capacity > 0.0 else 0.0
+
+        if ratio > 1.0:
+            status = "Failed"
+            messages.append(f"Shear demand/capacity ratio {ratio:.2f} exceeds 1.0.")
+        elif ratio > 0.9:
+            status = "Warning"
+            messages.append(f"Shear demand/capacity ratio {ratio:.2f} is near capacity.")
+
+        return ShearResult(
+            vn_concrete=Vc,
+            vn_steel=Vs,
             phi_vn=phi_vn,
             required_spacing=self.s,
             status=status,
             messages=messages,
+            demand_capacity_ratio=ratio,
         )
-
-        demand = max(loads.Vu, 0.0)
-        capacity = max(result.phi_vn, 0.0)
-        ratio = demand / capacity if capacity > 0.0 else 0.0
-
-        if ratio > 1.0:
-            result.status = "Failed"
-            result.messages.append(f"Demand/capacity ratio {ratio:.2f} exceeds 1.0.")
-        elif ratio > 0.9:
-            result.status = "Warning"
-            result.messages.append(f"Demand/capacity ratio {ratio:.2f} is near capacity.")
-
-        result.demand_capacity_ratio = ratio
-        return result

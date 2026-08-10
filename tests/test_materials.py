@@ -1,20 +1,23 @@
-import pytest
+import unittest
 from aci318.materials.concrete import Concrete
 from aci318.materials.steel import Steel
 
-def test_concrete_creation():
-    concrete = Concrete(fc=4.0)
-    assert concrete.fc == 4.0
-    assert concrete.density == 145.0
-    assert concrete.concrete_type == "normalweight"
-    assert concrete.max_strain == 0.003
-    # Check default Ec calculation for normal weight concrete
-    # Ec = 57000 * sqrt(fc * 1000) / 1000 = 57 * sqrt(4000) = 57 * 63.2455 = 3604.996 ksi
-    assert concrete.Ec == pytest.approx(3604.996, abs=1e-2)
+
+class TestMaterials(unittest.TestCase):
+    def test_concrete_creation(self):
+        concrete = Concrete(fc=4.0)
+        self.assertEqual(concrete.fc, 4.0)
+        self.assertEqual(concrete.density, 145.0)
+        self.assertEqual(concrete.concrete_type, "normalweight")
+        self.assertEqual(concrete.max_strain, 0.003)
+        self.assertAlmostEqual(concrete.Ec, 3604.996, delta=0.1)
+
+    def test_steel_creation(self):
+        steel = Steel(fy=60.0)
+        self.assertEqual(steel.fy, 60.0)
+        self.assertEqual(steel.Es, 29000.0)
+        self.assertAlmostEqual(steel.yield_strain, 60.0 / 29000.0, places=5)
 
 
-def test_steel_creation():
-    steel = Steel(fy=60.0)
-    assert steel.fy == 60.0
-    assert steel.Es == 29000.0
-    assert steel.yield_strain == pytest.approx(60.0 / 29000.0)
+if __name__ == "__main__":
+    unittest.main()

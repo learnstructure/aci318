@@ -1,8 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-# We use typing.Any for Concrete/Steel materials in the base code 
-# to avoid circular imports, or we can type hint them cleanly.
 
 class DesignCode(ABC):
     """
@@ -11,73 +9,78 @@ class DesignCode(ABC):
     """
 
     @abstractmethod
-    def get_phi_flexure(self, strain_t: float) -> float:
-        """
-        Get the strength reduction factor (phi) for flexure based on the net tensile strain.
-        
-        Args:
-            strain_t: Net tensile strain in extreme tension steel.
-            
-        Returns:
-            float: Strength reduction factor.
-        """
+    def get_phi_flexure(self, strain_t: float, spiral: bool = False) -> float:
+        """Get strength reduction factor (phi) for flexure based on net tensile strain."""
         pass
 
     @abstractmethod
     def get_phi_shear(self) -> float:
-        """
-        Get the strength reduction factor (phi) for shear.
-        
-        Returns:
-            float: Strength reduction factor.
-        """
+        """Get strength reduction factor (phi) for shear."""
         pass
 
     @abstractmethod
-    def get_phi_axial(self, compression: bool) -> float:
-        """
-        Get the strength reduction factor (phi) for axial strength.
-        
-        Args:
-            compression: True if member is compression-controlled, False if tension-controlled.
-            
-        Returns:
-            float: Strength reduction factor.
-        """
+    def get_phi_torsion(self) -> float:
+        """Get strength reduction factor (phi) for torsion."""
+        pass
+
+    @abstractmethod
+    def get_phi_axial(self, compression: bool, spiral: bool = False) -> float:
+        """Get strength reduction factor (phi) for axial strength."""
         pass
 
     @abstractmethod
     def get_beta_1(self, f_c: float) -> float:
-        """
-        Get the beta_1 factor for the equivalent rectangular concrete stress block.
-        
-        Args:
-            f_c: Concrete compressive strength (ksi).
-            
-        Returns:
-            float: beta_1 factor.
-        """
+        """Get beta_1 factor for equivalent rectangular concrete stress block."""
         pass
 
     @abstractmethod
     def get_lambda_(self, concrete: Any) -> float:
-        """
-        Get the lightweight concrete modification factor (lambda).
-        
-        Args:
-            concrete: Concrete material object.
-            
-        Returns:
-            float: lambda modification factor.
-        """
+        """Get lightweight concrete modification factor (lambda)."""
         pass
 
     @abstractmethod
-    def get_minimum_steel_ratio(self) -> float:
-        """
-        Get the minimum flexural reinforcement ratio.
-        
-        Returns:
-            float: Minimum steel ratio.
-        """
+    def get_minimum_steel_ratio(self, f_c: float = 4.0, f_y: float = 60.0) -> float:
+        """Get minimum flexural reinforcement ratio."""
+        pass
+
+    @abstractmethod
+    def get_vc(
+        self,
+        f_c: float,
+        b_w: float,
+        d: float,
+        N_u: float = 0.0,
+        A_g: float = 1.0,
+        A_v: float = 0.0,
+        A_v_min: float = 0.0,
+        lambda_val: float = 1.0,
+        rho_w: float = 0.01,
+    ) -> float:
+        """Get concrete shear strength Vc in kips."""
+        pass
+
+    @abstractmethod
+    def get_threshold_torsion(
+        self,
+        f_c: float,
+        Acp: float,
+        pcp: float,
+        N_u: float = 0.0,
+        A_g: float = 1.0,
+        lambda_val: float = 1.0,
+    ) -> float:
+        """Get threshold torsion Tth in kip-in."""
+        pass
+
+    @abstractmethod
+    def get_cracking_torsion(
+        self,
+        f_c: float,
+        Acp: float,
+        pcp: float,
+        N_u: float = 0.0,
+        A_g: float = 1.0,
+        lambda_val: float = 1.0,
+    ) -> float:
+        """Get cracking torsion Tcr in kip-in."""
         pass
