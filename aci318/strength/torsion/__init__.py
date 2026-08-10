@@ -1,3 +1,0 @@
-"""
-Torsion design engines.
-"""

@@ -6,7 +6,7 @@ from aci318.sections.rectangle import RectangleSection
 from aci318.loads.load_effects import LoadEffects
 from aci318.members.beam import Beam
 
-def test_beam_flexural_and_shear_design():
+def test_beam_flexural_and_shear_check():
     # 1. Setup materials
     concrete = Concrete(fc=4.0)  # 4 ksi concrete
     steel = Steel(fy=60.0)      # Grade 60 steel
@@ -26,8 +26,8 @@ def test_beam_flexural_and_shear_design():
     # 5. Define load effects
     loads = LoadEffects(Pu=0.0, Mu=2500.0, Vu=30.0, Tu=0.0)
     
-    # 6. Run design
-    result = beam.design(loads)
+    # 6. Run check
+    result = beam.check(loads)
     
     # 7. Asserts
     assert result.status in ("Passed", "Warning") # Should pass or raise minor warnings (e.g. min steel ratio checks)
@@ -46,3 +46,29 @@ def test_beam_flexural_and_shear_design():
     assert result.flexure.neutral_axis == pytest.approx(4.10, abs=0.1)
     assert result.flexure.steel_strain == pytest.approx(0.0127, abs=0.001)
     assert result.flexure.phi_mn == pytest.approx(2528.5, abs=5.0)
+
+
+def test_beam_automatic_design():
+    concrete = Concrete(fc=4.0)
+    code = ACI318_19()
+    section = RectangleSection(b=12.0, h=24.0, concrete=concrete)
+    
+    # Instantiate beam without prior reinforcement layers, specifying stirrups
+    beam = Beam(
+        section=section,
+        code=code,
+        stirrup_bar_size="#3",
+        stirrup_spacing=12.0,
+        stirrup_legs=2,
+        fy_shear=60.0
+    )
+    
+    loads = LoadEffects(Pu=0.0, Mu=2500.0, Vu=30.0, Tu=0.0)
+    design_result = beam.design(loads, fy_flexure=60.0)
+    
+    assert design_result.status == "Passed"
+    assert design_result.required_flexure_As > 0.0
+    assert "None" not in design_result.suggested_bars
+    assert "Inadequate" not in design_result.suggested_bars
+    assert design_result.provided_flexure_As >= design_result.required_flexure_As
+    assert design_result.required_shear_spacing > 0.0

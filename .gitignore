@@ -139,4 +139,5 @@ cython_debug/
 *.swo
 
 agent.md
+agent.pdf
 trash/

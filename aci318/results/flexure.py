@@ -13,3 +13,4 @@ class FlexureResult:
     phi_mn: float               # Design bending strength (kip-in)
     status: str                 # "Passed", "Warning", or "Failed"
     messages: List[str] = field(default_factory=list) # Design warnings or failure logs
+    demand_capacity_ratio: float = 0.0

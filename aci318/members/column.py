@@ -2,8 +2,9 @@ from aci318.codes.base import DesignCode
 from aci318.loads.load_effects import LoadEffects
 from aci318.sections.rectangle import RectangleSection
 from aci318.results.column import ColumnDesignResult
-from aci318.strength.axial.column_engine import calculate_axial_capacity
-from aci318.strength.shear.beam_engine import design_rectangular_beam_shear  # generic shear
+from aci318.strength.axial_strength import AxialStrength
+from aci318.strength.interaction_strength import InteractionStrength
+from aci318.strength.shear_strength import ShearStrength
 
 class Column:
     """
@@ -15,37 +16,36 @@ class Column:
         self.code = code
 
     def design(self, loads: LoadEffects) -> ColumnDesignResult:
-        """
-        Coordinates axial/flexural and shear checks for the column.
-        """
-        # Run axial strength calculation (simplified for flexure/axial representation)
-        axial_res = calculate_axial_capacity(self.section, self.code)
-        
-        # In a complete implementation, this would verify PM interaction curves.
-        # For this skeleton, we map to FlexureResult-compatible structure
+        """Coordinates axial, interaction, and shear checks for the column."""
+        axial_checker = AxialStrength(self.section, self.code)
+        axial_res = axial_checker.check(loads)
+
+        interaction_checker = InteractionStrength(self.section, self.code)
+        interaction_res = interaction_checker.check(loads)
+
+        shear_checker = ShearStrength(self.section, self.code)
+        shear_res = shear_checker.check(loads)
+
         from aci318.results.flexure import FlexureResult
         flexure_mapped = FlexureResult(
             required_steel=0.0,
             provided_steel=sum(l.area for l in self.section.layers),
             neutral_axis=0.0,
             steel_strain=0.005,
-            phi_mn=axial_res.phi_pn_max,  # map capacity
+            phi_mn=max(axial_res.phi_pn_max, 0.0),
             status=axial_res.status,
-            messages=axial_res.messages
+            messages=axial_res.messages + interaction_res.messages,
         )
-        
-        shear_res = design_rectangular_beam_shear(self.section, self.code)
-        
-        # Composite status
+
         status = "Passed"
-        if axial_res.status == "Failed" or shear_res.status == "Failed":
+        if axial_res.status == "Failed" or shear_res.status == "Failed" or interaction_res.status == "Failed":
             status = "Failed"
-        elif axial_res.status == "Warning" or shear_res.status == "Warning":
+        elif axial_res.status == "Warning" or shear_res.status == "Warning" or interaction_res.status == "Warning":
             status = "Warning"
-            
+
         return ColumnDesignResult(
             axial_flexure=flexure_mapped,
             shear=shear_res,
             status=status,
-            messages=axial_res.messages + shear_res.messages
+            messages=axial_res.messages + interaction_res.messages + shear_res.messages,
         )

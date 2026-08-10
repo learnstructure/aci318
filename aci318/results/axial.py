@@ -12,3 +12,4 @@ class AxialResult:
     phi_pn_max: float           # Factored maximum design axial strength (kip)
     status: str                 # "Passed", "Warning", or "Failed"
     messages: List[str] = field(default_factory=list)
+    demand_capacity_ratio: float = 0.0

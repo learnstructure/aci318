@@ -1,10 +1,11 @@
 """
 Standard reinforcing bar database (US customary sizes).
 """
+import math
 from dataclasses import dataclass
 
 @dataclass(frozen=True)
-def RebarInfo:
+class RebarInfo:
     bar_size: str             # e.g., "#8"
     diameter: float           # Nominal diameter (in)
     area: float               # Nominal cross-sectional area (in^2)
@@ -38,3 +39,40 @@ def get_bar_diameter(bar_size: str) -> float:
     if bar_size not in BAR_DATABASE:
         raise ValueError(f"Unknown bar size: {bar_size}")
     return BAR_DATABASE[bar_size]["diameter"]
+
+
+
+class Rebar:
+    def __init__(self, bar_size: str = None, diameter: float = None, area: float = None):
+        """
+        Represents a reinforcing steel bar.
+        Can be initialized by:
+        1. bar_size: a standard ASTM size like "#8"
+        2. diameter: nominal diameter in inches
+        3. area: cross-sectional area in square inches
+        """
+        if bar_size is not None:
+            if bar_size not in BAR_DATABASE:
+                raise ValueError(f"Unknown bar size: {bar_size}")
+            self.bar_size = bar_size
+            self.diameter = BAR_DATABASE[bar_size]["diameter"]
+            self.area = BAR_DATABASE[bar_size]["area"]
+        elif diameter is not None:
+            if diameter <= 0:
+                raise ValueError("Diameter must be positive.")
+            self.bar_size = None
+            self.diameter = diameter
+            self.area = math.pi * (diameter ** 2) / 4.0
+        elif area is not None:
+            if area <= 0:
+                raise ValueError("Area must be positive.")
+            self.bar_size = None
+            self.area = area
+            self.diameter = math.sqrt(4.0 * area / math.pi)
+        else:
+            raise ValueError("Must specify either bar_size, diameter, or area.")
+
+    def __repr__(self) -> str:
+        if self.bar_size:
+            return f"Rebar(size={self.bar_size}, d={self.diameter:.3f}in, A={self.area:.3f}in²)"
+        return f"Rebar(d={self.diameter:.3f}in, A={self.area:.3f}in²)"

@@ -1,6 +1,18 @@
 from dataclasses import dataclass, field
 from typing import List, Tuple
 
+
+@dataclass
+class InteractionResult:
+    """Result object for a simple axial-flexural interaction check."""
+
+    axial_ratio: float
+    flexure_ratio: float
+    demand_capacity_ratio: float
+    status: str = "Passed"
+    messages: List[str] = field(default_factory=list)
+
+
 @dataclass
 class PMInteractionResult:
     """

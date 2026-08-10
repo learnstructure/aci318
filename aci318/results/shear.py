@@ -12,3 +12,4 @@ class ShearResult:
     required_spacing: float     # Required stirrup spacing (in)
     status: str                 # "Passed", "Warning", or "Failed"
     messages: List[str] = field(default_factory=list) # Design notes/warnings
+    demand_capacity_ratio: float = 0.0

@@ -1,3 +1,0 @@
-"""
-Slab reinforcement detailing.
-"""

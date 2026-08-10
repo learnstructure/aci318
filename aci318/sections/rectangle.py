@@ -11,6 +11,8 @@ class RebarLayer:
     area: float                # Total steel area in this layer (in^2)
     depth: float               # Depth from extreme compression fiber to centroid of this layer (in)
     steel: Steel               # Steel material object for this layer
+    num_bars: int = None       # Number of bars in this layer (optional)
+    bar_size: str = None       # Size designation of the bars (optional)
 
 @dataclass
 class RectangleSection:
@@ -88,12 +90,47 @@ class RectangleSection:
         weighted_depth = sum(lyr.depth * lyr.area for lyr in comp_layers) / total_area
         return total_area, weighted_depth
 
-    def add_rebar_layer(self, area: float, depth: float, steel: Steel) -> None:
+    def add_rebar_layer(
+        self,
+        area: float = None,
+        depth: float = None,
+        steel: Steel = None,
+        num_bars: int = None,
+        bar_size: str = None,
+        rebar: 'Rebar' = None
+    ) -> None:
         """
         Add a layer of reinforcement to the section.
+        Can be specified by:
+        1. area directly (e.g., area=2.37)
+        2. a Rebar instance and num_bars (e.g., rebar=Rebar("#8"), num_bars=3)
+        3. both num_bars and bar_size (e.g., num_bars=3, bar_size="#8")
         """
+        if depth is None:
+            raise ValueError("Rebar depth must be specified.")
+        if steel is None:
+            raise ValueError("Steel material must be specified.")
+
+        if area is None:
+            if rebar is not None:
+                if num_bars is None:
+                    num_bars = 1
+                if num_bars <= 0:
+                    raise ValueError("Number of bars must be positive.")
+                area = num_bars * rebar.area
+                bar_size = rebar.bar_size
+            elif num_bars is not None and bar_size is not None:
+                if num_bars <= 0:
+                    raise ValueError("Number of bars must be positive.")
+                from aci318.database.bars import Rebar
+                r = Rebar(bar_size=bar_size)
+                area = num_bars * r.area
+            else:
+                raise ValueError("Must provide 'area', a 'rebar' with optional 'num_bars', or both 'num_bars' and 'bar_size'.")
+
         if area <= 0:
             raise ValueError("Rebar area must be positive.")
         if not (0 <= depth <= self.h):
             raise ValueError(f"Rebar depth must be within section height 0 and {self.h}.")
-        self.layers.append(RebarLayer(area, depth, steel))
+
+        self.layers.append(RebarLayer(area, depth, steel, num_bars, bar_size))

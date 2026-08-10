@@ -1,3 +1,0 @@
-"""
-Beam reinforcement detailing.
-"""
