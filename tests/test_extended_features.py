@@ -84,6 +84,24 @@ class TestExtendedFeatures(unittest.TestCase):
         self.assertGreater(opt_res.width, 0.0)
         self.assertGreater(opt_res.height, 0.0)
         self.assertGreater(opt_res.cost_per_ft, 0.0)
+        self.assertTrue(opt_res.feasible)
+
+        # Infeasible load should raise ValueError
+        with self.assertRaises(ValueError):
+            optimizer.optimize(
+                loads=LoadEffects(Mu=999999.0, Vu=9999.0),
+                min_b=10.0, max_b=12.0, step_b=2.0,
+                min_h=12.0, max_h=14.0, step_h=2.0,
+            )
+
+        # Infeasible load with raise_on_failure=False should return feasible=False
+        infeasible_res = optimizer.optimize(
+            loads=LoadEffects(Mu=999999.0, Vu=9999.0),
+            min_b=10.0, max_b=12.0, step_b=2.0,
+            min_h=12.0, max_h=14.0, step_h=2.0,
+            raise_on_failure=False,
+        )
+        self.assertFalse(infeasible_res.feasible)
 
     def test_development_and_splices(self):
         dev_res = calculate_development_length(

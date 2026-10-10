@@ -30,6 +30,7 @@ from struct_core import (
     StirrupLayout,
     conversion_factor,
 )
+from struct_core.units import PRESETS
 
 from aci318.loads.load_effects import LoadEffects
 from aci318.members.beam import Beam
@@ -142,18 +143,12 @@ def analysis_result_to_load_effects(
         max_tu = max(max_tu, t)
 
     if units is not None:
-        try:
-            f_conv = conversion_factor(units, "kip, in, s, F", "force")
-            m_conv = conversion_factor(units, "kip, ft, s, F", "moment")
-        except Exception:
-            f_conv = 0.224808943 if is_metric else 1.0
-            m_conv = 0.737562149 if is_metric else 1.0
+        f_conv = conversion_factor(units, PRESETS["kip, in, s, °F"], "force")
+        m_conv = conversion_factor(units, PRESETS["kip, ft, s, °F"], "moment")
     elif is_metric:
-        # Convert SI (kN, kN-m) to US Customary (kips, kip-ft) for aci318 member design
-        # 1 kN = 0.224808943 kips
-        # 1 kN-m = 0.737562149 kip-ft
-        f_conv = 0.224808943
-        m_conv = 0.737562149
+        # Standard SI (kN, kN-m) to US Customary (kips, kip-ft)
+        f_conv = conversion_factor(PRESETS["kN, m, s, °C"], PRESETS["kip, in, s, °F"], "force")
+        m_conv = conversion_factor(PRESETS["kN, m, s, °C"], PRESETS["kip, ft, s, °F"], "moment")
     else:
         f_conv = 1.0
         m_conv = 1.0
@@ -751,22 +746,20 @@ def _run_member_design(
     materials_by_id = {getattr(m, "id", None): m for m in model.materials}
     code = ACI318_19()
 
+    is_metric_model = False
     if units is not None:
-        is_metric_model = bool(getattr(units, "is_metric", False))
-    else:
-        # Detect if model is defined in metric SI units (meters, kN, kN-m)
-        is_metric_model = False
-        for s in model.sections:
-            if (hasattr(s, "b") and 0.0 < getattr(s, "b", 0.0) <= 2.5) or (hasattr(s, "d") and 0.0 < getattr(s, "d", 0.0) <= 2.5):
-                is_metric_model = True
-                break
+        u_len = str(getattr(units, "length", "")).lower()
+        is_metric_model = u_len in ("m", "mm", "cm") or bool(getattr(units, "is_metric", False))
 
     member_results: Dict[Union[int, str], Any] = {}
     for element in model.elements:
         elem_id = getattr(element, "id", None)
         sec_schema = sections_by_id.get(getattr(element, "section_id", None))
+        if sec_schema is None:
+            raise ValueError(f"Element {elem_id} references missing section '{getattr(element, 'section_id', None)}'.")
+
         mat_schema = materials_by_id.get(getattr(element, "material_id", None))
-        concrete = _build_concrete(mat_schema)
+        concrete = _build_concrete(mat_schema, units=units)
 
         loads = analysis_result_to_load_effects(elem_id, analysis_result, is_metric=is_metric_model, units=units) or LoadEffects()
 
@@ -776,24 +769,15 @@ def _run_member_design(
         # Calculate element length in inches
         start_node = nodes_by_id.get(getattr(element, "start_node", None))
         end_node = nodes_by_id.get(getattr(element, "end_node", None))
-        elem_len_in = 144.0
-        if start_node is not None and end_node is not None:
-            dx = float(getattr(end_node, "x", 0.0)) - float(getattr(start_node, "x", 0.0))
-            dy = float(getattr(end_node, "y", 0.0)) - float(getattr(start_node, "y", 0.0))
-            dz = float(getattr(end_node, "z", 0.0)) - float(getattr(start_node, "z", 0.0))
-            raw_len = (dx**2 + dy**2 + dz**2)**0.5
-            if units is not None:
-                try:
-                    len_scale = conversion_factor(units, "kip, in, s, F", "length")
-                    elem_len_in = raw_len * len_scale
-                except Exception:
-                    elem_len_in = raw_len
-            elif 0.0 < raw_len <= 50.0:  # meters
-                elem_len_in = raw_len * 39.37007874
-            elif raw_len > 500.0:  # mm
-                elem_len_in = raw_len / 25.4
-            elif raw_len > 0.0:
-                elem_len_in = raw_len
+        if start_node is None or end_node is None:
+            raise ValueError(f"Element {elem_id} references missing start_node ({getattr(element, 'start_node', None)}) or end_node ({getattr(element, 'end_node', None)}).")
+
+        dx = float(getattr(end_node, "x", 0.0)) - float(getattr(start_node, "x", 0.0))
+        dy = float(getattr(end_node, "y", 0.0)) - float(getattr(start_node, "y", 0.0))
+        dz = float(getattr(end_node, "z", 0.0)) - float(getattr(start_node, "z", 0.0))
+        raw_len = (dx**2 + dy**2 + dz**2)**0.5
+        len_scale = conversion_factor(units, PRESETS["kip, in, s, °F"], "length") if units is not None else 1.0
+        elem_len_in = raw_len * len_scale
 
         if is_column:
             if is_circular:
@@ -844,6 +828,10 @@ def _run_member_design(
         from aci318.foundations.isolated import IsolatedFooting
         from aci318.materials.steel import Steel
 
+        is_3d = any(getattr(n, "z", 0.0) != 0.0 for n in model.nodes) or any(
+            getattr(supp, "uz", False) for supp in supports
+        )
+
         for supp in supports:
             node_id = getattr(supp, "node_id", None)
             if node_id is None:
@@ -870,26 +858,31 @@ def _run_member_design(
                     break
 
             # Reaction forces -> Design load effects
-            if units is not None:
-                try:
-                    f_conv = conversion_factor(units, "kip, in, s, F", "force")
-                    m_conv = conversion_factor(units, "kip, ft, s, F", "moment")
-                except Exception:
-                    f_conv = 0.224808943 if is_metric_model else 1.0
-                    m_conv = 0.737562149 if is_metric_model else 1.0
-            else:
-                f_conv = 0.224808943 if is_metric_model else 1.0
-                m_conv = 0.737562149 if is_metric_model else 1.0
+            f_conv = conversion_factor(units, PRESETS["kip, in, s, °F"], "force") if units is not None else (0.224808943 if is_metric_model else 1.0)
+            m_conv = conversion_factor(units, PRESETS["kip, ft, s, °F"], "moment") if units is not None else (0.737562149 if is_metric_model else 1.0)
 
-            pu_kip = max(5.0, abs(float(getattr(rxn, "fy", getattr(rxn, "Fy", getattr(rxn, "fz", getattr(rxn, "Fz", 0.0)))) or 0.0)) * f_conv)
-            mu_kipft = max(
-                abs(float(getattr(rxn, "mz", getattr(rxn, "Mz", 0.0)) or 0.0)),
-                abs(float(getattr(rxn, "mx", getattr(rxn, "Mx", 0.0)) or 0.0)),
-            ) * m_conv
-            vu_kip = max(
-                abs(float(getattr(rxn, "fx", getattr(rxn, "Fx", 0.0)) or 0.0)),
-                abs(float(getattr(rxn, "vy", 0.0) or 0.0)),
-            ) * f_conv
+            # In 3D space frames, vertical reaction is along Z; in 2D frames, vertical reaction is along Y
+            if is_3d:
+                vert_f = abs(float(getattr(rxn, "fz", getattr(rxn, "Fz", 0.0)) or 0.0))
+                horiz_f = max(
+                    abs(float(getattr(rxn, "fx", getattr(rxn, "Fx", 0.0)) or 0.0)),
+                    abs(float(getattr(rxn, "fy", getattr(rxn, "Fy", 0.0)) or 0.0)),
+                )
+                moment_f = max(
+                    abs(float(getattr(rxn, "mx", getattr(rxn, "Mx", 0.0)) or 0.0)),
+                    abs(float(getattr(rxn, "my", getattr(rxn, "My", 0.0)) or 0.0)),
+                )
+            else:
+                vert_f = abs(float(getattr(rxn, "fy", getattr(rxn, "Fy", 0.0)) or 0.0))
+                horiz_f = abs(float(getattr(rxn, "fx", getattr(rxn, "Fx", 0.0)) or 0.0))
+                moment_f = abs(float(getattr(rxn, "mz", getattr(rxn, "Mz", 0.0)) or 0.0))
+
+            pu_kip = vert_f * f_conv
+            if pu_kip <= 0.0:
+                continue
+
+            mu_kipft = moment_f * m_conv
+            vu_kip = horiz_f * f_conv
 
             # Spread footing sizing: allowable soil bearing q_allow = 4.0 ksf
             allowable_q = 4.0
@@ -898,10 +891,11 @@ def _run_member_design(
             ftg_w = ftg_l
             ftg_h = 16.0
 
-            mat_schema = None
-            if model.materials:
-                mat_schema = model.materials[0]
-            concrete = _build_concrete(mat_schema)
+            concrete_mat = next(
+                (m for m in model.materials if "conc" in str(getattr(m, "id", "")).lower() or "conc" in str(getattr(m, "name", "")).lower()),
+                model.materials[0] if model.materials else None
+            )
+            concrete = _build_concrete(concrete_mat, units=units)
 
             ftg_id = f"F{node_id}"
             ftg = IsolatedFooting(
@@ -922,49 +916,45 @@ def _run_member_design(
     return member_results
 
 
-def _build_concrete(mat_schema: Any) -> Concrete:
-    """Build a Concrete material from a struct_core material schema, defaulting to 4 ksi."""
-    fc = 4.0
+def _build_concrete(mat_schema: Any, units: Optional[Any] = None) -> Concrete:
+    """Build a Concrete material from a struct_core material schema (fc in ksi)."""
+    fc_val = None
     if mat_schema is not None:
         for attr in ("fc", "fc_ksi", "fpc"):
             value = getattr(mat_schema, attr, None)
             if isinstance(value, (int, float)) and value > 0.0:
-                fc = float(value)
-                if attr in {"fc_ksi", "fpc"} or value < 50.0:
-                    break
-                # if value looks like psi (>= 1000), convert to ksi
-                if value >= 1000.0:
-                    fc = value / 1000.0
+                fc_val = float(value)
                 break
-    return Concrete(fc=fc)
+
+    if fc_val is None:
+        fc_ksi = 4.0
+    else:
+        if units is not None:
+            stress_scale = conversion_factor(units, PRESETS["kip, in, s, °F"], "stress")
+            fc_ksi = fc_val * stress_scale
+        elif fc_val >= 1000.0:
+            fc_ksi = fc_val / 1000.0  # psi to ksi
+        elif fc_val > 50.0:
+            fc_ksi = fc_val * 0.145038 / 1000.0  # kPa to ksi
+        else:
+            fc_ksi = fc_val
+
+    return Concrete(fc=fc_ksi)
 
 
 def _section_dimensions(sec_schema: Any, units: Optional[Any] = None) -> Tuple[float, float, float, bool]:
     """Return (b, h, diameter, is_circular) in inches for a struct_core section schema."""
     if sec_schema is None:
-        return 12.0, 18.0, 12.0, False
+        raise ValueError("Section schema is required to determine dimensions.")
 
-    def _to_in(val: float) -> float:
-        if val <= 0.0:
-            return val
-        if units is not None:
-            try:
-                scale = conversion_factor(units, "kip, in, s, F", "length")
-                return val * scale
-            except Exception:
-                pass
-        if val <= 2.5:  # meters to inches (e.g. 0.30 m -> 11.81 in)
-            return val * 39.37007874
-        if val >= 50.0:  # mm to inches (e.g. 300 mm -> 11.81 in)
-            return val / 25.4
-        return val  # already inches
+    len_scale = conversion_factor(units, PRESETS["kip, in, s, °F"], "length") if units is not None else 1.0
 
     if hasattr(sec_schema, "b") and hasattr(sec_schema, "h"):
-        return _to_in(float(sec_schema.b)), _to_in(float(sec_schema.h)), 0.0, False
+        return float(sec_schema.b) * len_scale, float(sec_schema.h) * len_scale, 0.0, False
     if hasattr(sec_schema, "d"):
-        return 0.0, 0.0, _to_in(float(sec_schema.d)), True
+        return 0.0, 0.0, float(sec_schema.d) * len_scale, True
 
-    return 12.0, 18.0, 12.0, False
+    raise ValueError(f"Unsupported section schema for ACI 318 design: {type(sec_schema).__name__}")
 
 
 def _is_column_member(element: Any, nodes_by_id: Dict[Any, Any]) -> bool:

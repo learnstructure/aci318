@@ -22,6 +22,7 @@ class OptimalBeamResult:
     steel_cost_per_ft: float          # Steel cost ($/ft)
     design_result: BeamDesignResult   # Design result object
     section: RectangleSection         # Optimized section object
+    feasible: bool = True             # Whether design satisfies all code constraints
 
 
 class BeamSectionOptimizer:
@@ -52,6 +53,7 @@ class BeamSectionOptimizer:
         min_h: float = 12.0,
         max_h: float = 36.0,
         step_h: float = 2.0,
+        raise_on_failure: bool = True,
     ) -> OptimalBeamResult:
         """
         Search grid of section sizes to find minimum material cost design that satisfies ACI 318.
@@ -60,9 +62,14 @@ class BeamSectionOptimizer:
             loads: Factored load effects.
             min_b, max_b, step_b: Width range in inches.
             min_h, max_h, step_h: Height range in inches.
+            raise_on_failure: If True (default), raises ValueError when no section meets constraints.
+                If False, returns a non-feasible result with feasible=False.
             
         Returns:
             OptimalBeamResult dataclass.
+            
+        Raises:
+            ValueError: If no candidate section satisfies constraints and raise_on_failure is True.
         """
         best_result: Optional[OptimalBeamResult] = None
         min_cost = float("inf")
@@ -105,13 +112,19 @@ class BeamSectionOptimizer:
                             steel_cost_per_ft=s_cost,
                             design_result=design_res,
                             section=section,
+                            feasible=True,
                         )
 
                 h_val += step_h
             b_val += step_b
 
         if best_result is None:
-            # Fallback to largest section if no design satisfied constraints
+            if raise_on_failure:
+                raise ValueError(
+                    f"No feasible beam section found satisfying ACI 318 design constraints within "
+                    f"width [{min_b}, {max_b}] in and height [{min_h}, {max_h}] in for loads "
+                    f"Pu={loads.Pu}, Mu={loads.Mu}, Vu={loads.Vu}."
+                )
             fallback_sec = RectangleSection(b=max_b, h=max_h, concrete=self.concrete)
             fallback_beam = Beam(section=fallback_sec, code=self.code)
             fallback_res = fallback_beam.design(loads)
@@ -123,6 +136,7 @@ class BeamSectionOptimizer:
                 steel_cost_per_ft=0.0,
                 design_result=fallback_res,
                 section=fallback_sec,
+                feasible=False,
             )
 
         return best_result
