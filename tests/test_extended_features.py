@@ -58,6 +58,8 @@ class TestExtendedFeatures(unittest.TestCase):
         self.assertIn(res.status, ("Passed", "Warning"))
 
     def test_isolated_footing(self):
+        from aci318.foundations import IsolatedFootingDesignResult
+
         ftg = IsolatedFooting(
             length=8.0,
             width=8.0,
@@ -69,6 +71,7 @@ class TestExtendedFeatures(unittest.TestCase):
             code=self.code19,
         )
         res = ftg.design(LoadEffects(Pu=150.0, Mu=200.0, Vu=15.0))
+        self.assertIsInstance(res, IsolatedFootingDesignResult)
         self.assertIn(res.status, ("Passed", "Warning"))
 
     def test_section_optimizer(self):

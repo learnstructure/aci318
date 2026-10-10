@@ -15,11 +15,21 @@ Designed with a clean single-responsibility architecture, `aci318` provides auto
 - **Code Version Abstraction:** Seamless switching between code provisions (**ACI 318-19** and **ACI 318-25**).
 - **Structural Members:**
   - **Beams:** Rectangular, T-Beam/Flanged, and Circular cross-sections under flexure, shear, and torsion.
-  - **Columns:** Compression/tension axial capacity, P-M interaction diagram generation, and shear ties.
+  - **Columns:** Compression/tension axial capacity, P-M interaction diagrams, ties/spirals, and **Biaxial P-M2-M3 Interaction** (Bresler Reciprocal Load Method §10.5.2 & Parme / Bresler Load Contour Method).
   - **Slabs:** One-way flexural design and minimum shrinkage/temperature reinforcement.
   - **Walls:** In-plane shear, flexure, and axial capacity checks.
-  - **Foundations:** Isolated spread footing designer with allowable soil bearing pressure checks, 1-way shear, and 2-way punching shear calculations.
+  - **Foundations:**
+    - `IsolatedFooting`: Spread footing design with allowable soil bearing pressure checks, 1-way shear, 2-way punching shear (with size effect $\lambda_s$), and orthogonal flexural reinforcement.
+    - `StripFooting`: Continuous wall footing designer per linear foot of wall length, checking bearing capacity, one-way shear at distance $d$ from wall face, and transverse/longitudinal steel.
+    - `CombinedFooting`: Two-column combined rectangular footing coordinator aligning footing centroid with resultant load, evaluating punching shear at both columns, critical one-way beam shear, and zero-shear longitudinal flexure.
+- **Serviceability & Deflection Analysis:**
+  - Cracked transformed section inertia $I_{cr}$ solving neutral axis depth $kd$.
+  - Bischoff effective moment of inertia $I_e$ (ACI 318-19 Eq. 24.2.3.5a).
+  - Time-dependent deflection multiplier $\lambda_\Delta = \xi / (1 + 50\rho')$ (ACI 318-19 §24.2.4.1).
+  - Multi-condition deflection solver (`calculate_beam_deflection`) evaluating immediate live and total long-term deflections against ACI 318 Table 24.2.2 limits ($L/360, L/240$).
+  - Crack control verification (`verify_crack_control`) checking bar spacing against ACI 318-19 §24.3.2 with service steel stress calculation.
 - **Strength Engines:** Independent, modular engines for flexure, shear, torsion, axial, P-M interaction, development length, and lap splices.
+  - Rigorous standard hook development length $l_{dh}$ with lightweight factor $\lambda$ in denominator per ACI 318-19 §25.4.3.1.
 - **Section Optimization:** `BeamSectionOptimizer` searches dimension grids to minimize total material cost ($/ft) balancing concrete volume and rebar weight.
 - **Reinforcement Detailing:** Structured schemas for bar placements, stirrup/tie spacing, and clear covers.
 - **Engineering Reports:** Clean ASCII text calculation summaries and publication-ready Markdown design reports.
@@ -39,7 +49,7 @@ aci318/
 ├── loads/          # Standardized load contracts (LoadEffects dataclass)
 ├── strength/       # Core computational engines (Flexure, Shear, Torsion, Axial, Development)
 ├── members/        # High-level element coordinators (Beam, Column, Slab, Wall)
-├── foundations/    # Foundation designers (IsolatedFooting)
+├── foundations/    # Foundation designers (IsolatedFooting, StripFooting, CombinedFooting)
 ├── optimization/   # Material cost & dimension optimization engines
 ├── detailing/      # Rebar placement & layout schemas
 ├── reports/        # Text and Markdown calculation report generators
@@ -151,12 +161,28 @@ print("\n".join(markdown_output.split("\n")[:15]))
 
 ---
 
+## Ecosystem Integration with `struct_core`
+
+`aci318` provides the `design_from_core` adapter function that reads a `struct_core.Project` or `AnalysisResult` (including governing force envelopes across multiple load combinations produced by `fem2d` / `fem3d`) and automatically runs code design checks and detailing generation:
+
+```python
+from aci318.adapters import design_from_core
+
+# Reads enveloped analysis forces (max Pu, Mu, Vu) and populates DesignResult and DetailingResult
+design_res, detail_res = design_from_core(project, design_code="ACI 318-19")
+project.design_results["ACI318_19"] = design_res
+project.detailing_results["ACI318_19"] = detail_res
+```
+
+---
+
 ## Running Test Suite
 
 Run the full automated test suite to verify code compliance and strength engines:
 
 ```bash
-python3 -m unittest discover -s tests
+conda activate structeng
+pytest tests
 ```
 
 ---

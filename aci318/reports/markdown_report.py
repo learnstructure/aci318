@@ -37,8 +37,8 @@ class MarkdownReport(ReportBase):
             "### Section Properties",
             f"- **Width (b):** {getattr(self.section, 'b', 0.0):.2f} in",
             f"- **Height (h):** {getattr(self.section, 'h', 0.0):.2f} in",
-            f"- **Gross Area (Ag):** {getattr(self.section, 'gross_area', 0.0):.2f} in²",
-            f"- **Gross Inertia (Ig):** {getattr(self.section, 'gross_inertia', 0.0):,.0f} in⁴",
+            f"- **Gross Area (Ag):** {getattr(self.section, 'gross_area', 0.0):.2f} in^2",
+            f"- **Gross Inertia (Ig):** {getattr(self.section, 'gross_inertia', 0.0):,.0f} in^4",
             "",
             "### Material Properties",
             f"- **Concrete Compressive Strength (f'c):** {self.section.concrete.fc:.2f} ksi",
@@ -64,8 +64,8 @@ class MarkdownReport(ReportBase):
         if hasattr(self.result, "required_flexure_As"):
             lines.extend([
                 "### Flexural Steel Design",
-                f"- **Required Steel Area (As,req):** {self.result.required_flexure_As:.3f} in²",
-                f"- **Provided Steel Area (As,prov):** {self.result.provided_flexure_As:.3f} in²",
+                f"- **Required Steel Area (As,req):** {self.result.required_flexure_As:.3f} in^2",
+                f"- **Provided Steel Area (As,prov):** {self.result.provided_flexure_As:.3f} in^2",
                 f"- **Suggested Layout:** `{self.result.suggested_bars}`",
                 "",
                 "### Shear Reinforcement Design",

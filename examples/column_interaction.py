@@ -37,18 +37,18 @@ def run_column_example():
     print("=" * 60)
     print(" 1. RECTANGULAR TIED COLUMN (16\" x 16\", 8 #8 bars)")
     print("=" * 60)
-    print(f"Gross Area Ag:       {rect_sec.gross_area:.1f} in²")
-    print(f"Steel Area Ast:      {rect_ast:.2f} in²")
-    print(f"Steel Ratio ρg:      {rect_ast / rect_sec.gross_area * 100:.2f}%")
+    print(f"Gross Area Ag:       {rect_sec.gross_area:.1f} in^2")
+    print(f"Steel Area Ast:      {rect_ast:.2f} in^2")
+    print(f"Steel Ratio rho_g:   {rect_ast / rect_sec.gross_area * 100:.2f}%")
     print(f"Pure Axial P0:       {p_max_rect.pn_nominal:.1f} kips")
-    print(f"Max Design φPn_max:  {p_max_rect.phi_pn_max:.1f} kips")
+    print(f"Max Design phi_Pn_max: {p_max_rect.phi_pn_max:.1f} kips")
 
     # Generate P-M Interaction Curve
     pm_engine = InteractionStrength(rect_sec, code)
     pm_curve = pm_engine.generate_pm_diagram(num_points=11)
 
-    print("\nP-M Interaction Diagram Points (φPn, φMn):")
-    print(f"{'Point':<8} {'Axial φPn (kips)':<20} {'Moment φMn (kip-in)':<20}")
+    print("\nP-M Interaction Diagram Points (phi_Pn, phi_Mn):")
+    print(f"{'Point':<8} {'Axial phi_Pn (kips)':<20} {'Moment phi_Mn (kip-in)':<20}")
     print("-" * 50)
     for i, (phi_mn, phi_pn) in enumerate(pm_curve.phi_points):
         print(f"{i+1:<8} {phi_pn:<20.1f} {phi_mn:<20.1f}")
@@ -70,10 +70,10 @@ def run_column_example():
     print("\n" + "=" * 60)
     print(" 2. CIRCULAR SPIRAL COLUMN (D = 18\", 6 #8 bars)")
     print("=" * 60)
-    print(f"Gross Area Ag:       {circ_sec.gross_area:.1f} in²")
-    print(f"Steel Area Ast:      {circ_ast:.2f} in²")
+    print(f"Gross Area Ag:       {circ_sec.gross_area:.1f} in^2")
+    print(f"Steel Area Ast:      {circ_ast:.2f} in^2")
     print(f"Pure Axial P0:       {p_max_circ.pn_nominal:.1f} kips")
-    print(f"Max Design φPn_max:  {p_max_circ.phi_pn_max:.1f} kips (Spiral α = 0.85, φ = 0.75)")
+    print(f"Max Design phi_Pn_max: {p_max_circ.phi_pn_max:.1f} kips (Spiral alpha = 0.85, phi = 0.75)")
 
 if __name__ == "__main__":
     run_column_example()

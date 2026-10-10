@@ -5,6 +5,11 @@ from .beam import BeamCheckResult, BeamDesignResult
 from .column import ColumnDesignResult
 from .development import DevelopmentResult
 from .flexure import FlexureResult
+from .footing import (
+    CombinedFootingDesignResult,
+    IsolatedFootingDesignResult,
+    StripFootingDesignResult,
+)
 from .interaction import InteractionResult, PMInteractionResult
 from .shear import ShearResult
 from .slab import SlabDesignResult
@@ -16,12 +21,15 @@ __all__ = [
     "BeamCheckResult",
     "BeamDesignResult",
     "ColumnDesignResult",
+    "CombinedFootingDesignResult",
     "DevelopmentResult",
     "FlexureResult",
     "InteractionResult",
+    "IsolatedFootingDesignResult",
     "PMInteractionResult",
     "ShearResult",
     "SlabDesignResult",
+    "StripFootingDesignResult",
     "TorsionResult",
     "WallDesignResult",
 ]

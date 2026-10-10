@@ -63,7 +63,7 @@ def run_development_example():
     ld_top = calculate_development_length(db_no8, steel, concrete, code, is_top_bar=True)
 
     print(f"#8 Bottom Bar Tension ld: {ld_bottom.ld_tension:.1f} in")
-    print(f"#8 Top Bar Tension ld:    {ld_top.ld_tension:.1f} in (ψt = 1.3 factor applied)")
+    print(f"#8 Top Bar Tension ld:    {ld_top.ld_tension:.1f} in (psi_t = 1.3 factor applied)")
     print("=" * 75)
 
 if __name__ == "__main__":

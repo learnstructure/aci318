@@ -39,11 +39,11 @@ def run_slab_and_wall_example():
     print(" 1. ONE-WAY ELEVATED SLAB DESIGN (h = 7.0 in)")
     print("=" * 60)
     print(f"Slab Status:             {slab_res.status}")
-    print(f"Required Flexural Steel: {slab_res.required_flexure_As:.3f} in²/ft")
-    print(f"Provided Flexural Steel: {slab_res.provided_flexure_As:.3f} in²/ft")
-    print(f"Temperature/Shrinkage As:{slab_res.temp_shrinkage_As:.3f} in²/ft")
+    print(f"Required Flexural Steel: {slab_res.required_flexure_As:.3f} in^2/ft")
+    print(f"Provided Flexural Steel: {slab_res.provided_flexure_As:.3f} in^2/ft")
+    print(f"Temperature/Shrinkage As:{slab_res.temp_shrinkage_As:.3f} in^2/ft")
     print(f"Suggested Bar Spacing:   {slab_res.suggested_bar_spacing:.1f} in o.c. (#{slab_res.bar_size})")
-    print(f"Shear Capacity φVc:      {slab_res.shear.phi_vn:.1f} kips/ft (Demand: {slab_loads.Vu:.1f})")
+    print(f"Shear Capacity phi_Vc:   {slab_res.shear.phi_vn:.1f} kips/ft (Demand: {slab_loads.Vu:.1f})")
 
     # 2. STRUCTURAL CONCRETE SHEAR WALL DESIGN
     # Wall thickness tw = 10.0 in, wall height Hw = 120 in (10 ft), wall length Lw = 144 in (12 ft)
@@ -67,9 +67,9 @@ def run_slab_and_wall_example():
     print(" 2. STRUCTURAL CONCRETE WALL DESIGN (tw = 10 in)")
     print("=" * 60)
     print(f"Overall Wall Status:     {wall_res.status}")
-    print(f"Vertical Rebar Spacing:  {wall_res.vertical_bar_spacing:.1f} in o.c. (As = {wall_res.provided_vertical_As:.3f} in²/ft)")
-    print(f"Horizontal Rebar Spacing:{wall_res.horizontal_bar_spacing:.1f} in o.c. (As = {wall_res.provided_horizontal_As:.3f} in²/ft)")
-    print(f"Shear Capacity φVn:      {wall_res.shear.phi_vn:.1f} kips/ft (Demand: {wall_loads.Vu:.1f})")
+    print(f"Vertical Rebar Spacing:  {wall_res.vertical_bar_spacing:.1f} in o.c. (As = {wall_res.provided_vertical_As:.3f} in^2/ft)")
+    print(f"Horizontal Rebar Spacing:{wall_res.horizontal_bar_spacing:.1f} in o.c. (As = {wall_res.provided_horizontal_As:.3f} in^2/ft)")
+    print(f"Shear Capacity phi_Vn:   {wall_res.shear.phi_vn:.1f} kips/ft (Demand: {wall_loads.Vu:.1f})")
 
 if __name__ == "__main__":
     run_slab_and_wall_example()

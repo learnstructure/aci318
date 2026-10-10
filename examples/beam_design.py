@@ -36,8 +36,8 @@ def run_beam_example():
     print(" 1. EXISTING BEAM CHECK")
     print("=" * 60)
     print(f"Overall Status: {check_result.status}")
-    print(f"Flexural Capacity φMn: {check_result.flexure.phi_mn:.1f} kip-in (Demand: {loads.Mu:.1f})")
-    print(f"Shear Capacity    φVn: {check_result.shear.phi_vn:.1f} kips   (Demand: {loads.Vu:.1f})")
+    print(f"Flexural Capacity phi_Mn: {check_result.flexure.phi_mn:.1f} kip-in (Demand: {loads.Mu:.1f})")
+    print(f"Shear Capacity    phi_Vn: {check_result.shear.phi_vn:.1f} kips   (Demand: {loads.Vu:.1f})")
     print(f"Flexural DCR:     {check_result.flexure.demand_capacity_ratio:.2f}")
     print(f"Shear DCR:        {check_result.shear.demand_capacity_ratio:.2f}")
 

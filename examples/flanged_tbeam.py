@@ -43,15 +43,15 @@ def run_tbeam_example():
     print("=" * 60)
     print(" FLANGED T-BEAM FLEXURAL CAPACITY")
     print("=" * 60)
-    print(f"Gross Area Ag:       {t_section.gross_area:.1f} in²")
+    print(f"Gross Area Ag:       {t_section.gross_area:.1f} in^2")
     print(f"Flange Width b_f:    {t_section.b_f:.1f} in")
     print(f"Flange Thickness h_f:{t_section.h_f:.1f} in")
     print(f"Web Width b_w:       {t_section.b_w:.1f} in")
-    print(f"Design Moment φMn:   {flex_res.phi_mn:.1f} kip-in ({flex_res.phi_mn / 12:.1f} kip-ft)")
+    print(f"Design Moment phi_Mn:{flex_res.phi_mn:.1f} kip-in ({flex_res.phi_mn / 12:.1f} kip-ft)")
     print(f"Applied Moment Mu:   {loads.Mu:.1f} kip-in")
     print(f"Flexural DCR:        {flex_res.demand_capacity_ratio:.2f}")
 
-    # 4. Check Shear Capacity (#4 stirrups 2 legs = 0.40 in², s = 8.0 in)
+    # 4. Check Shear Capacity (#4 stirrups 2 legs = 0.40 in^2, s = 8.0 in)
     shear_engine = ShearStrength(
         t_section,
         code,
@@ -64,11 +64,11 @@ def run_tbeam_example():
     print("\n" + "=" * 60)
     print(" SHEAR CAPACITY (b_w = 14 in, #4 stirrups @ 8.0 in)")
     print("=" * 60)
-    print(f"Concrete Shear φVc:  {0.75 * shear_res.vn_concrete:.1f} kips")
-    print(f"Steel Shear φVs:     {0.75 * shear_res.vn_steel:.1f} kips")
-    print(f"Total Shear φVn:     {shear_res.phi_vn:.1f} kips (Demand: {loads.Vu:.1f} kips)")
-    print(f"Shear DCR:           {shear_res.demand_capacity_ratio:.2f}")
-    print(f"Shear Status:        {shear_res.status}")
+    print(f"Concrete Shear phi_Vc: {0.75 * shear_res.vn_concrete:.1f} kips")
+    print(f"Steel Shear phi_Vs:    {0.75 * shear_res.vn_steel:.1f} kips")
+    print(f"Total Shear phi_Vn:    {shear_res.phi_vn:.1f} kips (Demand: {loads.Vu:.1f} kips)")
+    print(f"Shear DCR:             {shear_res.demand_capacity_ratio:.2f}")
+    print(f"Shear Status:          {shear_res.status}")
 
 if __name__ == "__main__":
     run_tbeam_example()

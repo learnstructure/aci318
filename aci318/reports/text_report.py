@@ -74,9 +74,9 @@ class BeamTextReport(ReportBase):
                 f"  b  (width)              = {s.b:.2f} in",
                 f"  h  (height)             = {s.h:.2f} in",
                 f"  d  (effective depth)    = {d:.2f} in",
-                f"  Ag (gross area)         = {s.gross_area:.2f} in²",
-                f"  Ig (gross inertia)      = {s.gross_inertia:,.0f} in⁴",
-                f"  As (tension steel)      = {As:.3f} in²",
+                f"  Ag (gross area)         = {s.gross_area:.2f} in^2",
+                f"  Ig (gross inertia)      = {s.gross_inertia:,.0f} in^4",
+                f"  As (tension steel)      = {As:.3f} in^2",
                 "",
                 "MATERIAL PROPERTIES",
                 self._sep("-"),
@@ -105,12 +105,12 @@ class BeamTextReport(ReportBase):
                 "FLEXURE  (ACI 318 Ch. 22)",
                 self._sep("-"),
                 f"  Neutral axis c          = {fl.neutral_axis:.3f} in",
-                f"  Net tensile strain εt   = {fl.steel_strain:.5f}",
-                f"  Min. steel As,min       = {fl.required_steel:.3f} in²",
-                f"  Provided steel As       = {fl.provided_steel:.3f} in²",
-                f"  φ·Mn                    = {fl.phi_mn:.1f} kip-in",
+                f"  Net tensile strain eps_t= {fl.steel_strain:.5f}",
+                f"  Min. steel As,min       = {fl.required_steel:.3f} in^2",
+                f"  Provided steel As       = {fl.provided_steel:.3f} in^2",
+                f"  phi*Mn                  = {fl.phi_mn:.1f} kip-in",
                 f"  Mu                      = {lo.Mu:.1f} kip-in",
-                f"  DCR (Mu/φMn)            = {self._dcr(lo.Mu, fl.phi_mn):.3f}",
+                f"  DCR (Mu/phiMn)          = {self._dcr(lo.Mu, fl.phi_mn):.3f}",
                 f"  Status                  = {self._ok(fl.phi_mn, lo.Mu)}",
             ]
             if fl.messages:
@@ -124,9 +124,9 @@ class BeamTextReport(ReportBase):
                 self._sep("-"),
                 f"  Vc (concrete)           = {sh.vn_concrete:.2f} kip",
                 f"  Vs (stirrups)           = {sh.vn_steel:.2f} kip",
-                f"  φ·Vn                    = {sh.phi_vn:.2f} kip",
+                f"  phi*Vn                  = {sh.phi_vn:.2f} kip",
                 f"  Vu                      = {lo.Vu:.1f} kip",
-                f"  DCR (Vu/φVn)            = {self._dcr(lo.Vu, sh.phi_vn):.3f}",
+                f"  DCR (Vu/phiVn)          = {self._dcr(lo.Vu, sh.phi_vn):.3f}",
                 f"  Status                  = {self._ok(sh.phi_vn, lo.Vu)}",
             ]
             if sh.messages:
@@ -137,7 +137,7 @@ class BeamTextReport(ReportBase):
             lines += [
                 "",
                 self._sep(),
-                f"  OVERALL STATUS  →  {r.status}",
+                f"  OVERALL STATUS  ->  {r.status}",
                 self._sep(),
             ]
             if r.messages:
@@ -156,8 +156,8 @@ class BeamTextReport(ReportBase):
                 self._sep("-"),
                 f"  b  (width)              = {s.b:.2f} in",
                 f"  h  (height)             = {s.h:.2f} in",
-                f"  Ag (gross area)         = {s.gross_area:.2f} in²",
-                f"  Ig (gross inertia)      = {s.gross_inertia:,.0f} in⁴",
+                f"  Ag (gross area)         = {s.gross_area:.2f} in^2",
+                f"  Ig (gross inertia)      = {s.gross_inertia:,.0f} in^4",
                 "",
                 "MATERIAL PROPERTIES",
                 self._sep("-"),
@@ -171,9 +171,9 @@ class BeamTextReport(ReportBase):
                 "",
                 "REQUIRED REINFORCEMENT",
                 self._sep("-"),
-                f"  Required Flexural As    = {r.required_flexure_As:.3f} in²",
+                f"  Required Flexural As    = {r.required_flexure_As:.3f} in^2",
                 f"  Suggested Bar Layout    = {r.suggested_bars}",
-                f"  Provided Flexural As    = {r.provided_flexure_As:.3f} in²",
+                f"  Provided Flexural As    = {r.provided_flexure_As:.3f} in^2",
                 "",
                 "REQUIRED TRANSVERSE STIRRUPS",
                 self._sep("-"),
@@ -182,7 +182,7 @@ class BeamTextReport(ReportBase):
                 f"  Required Spacing        = {r.required_shear_spacing:.1f} in",
                 "",
                 self._sep(),
-                f"  DESIGN STATUS   →  {r.status}",
+                f"  DESIGN STATUS   ->  {r.status}",
                 self._sep(),
             ]
             if r.messages:

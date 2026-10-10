@@ -125,3 +125,11 @@ class CircularSection:
                     bar_size=bar_size,
                 )
             )
+
+    def get_weak_axis_section(self) -> 'CircularSection':
+        """Circular sections are radially symmetric; weak-axis capacity equals strong-axis."""
+        return self
+
+    # Convenience alias
+    add_circular_pattern = setup_circular_bar_pattern
+

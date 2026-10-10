@@ -41,8 +41,9 @@ def calculate_development_length(
     ldc2 = 0.0003 * fy_psi * db
     ld_compression = max(ldc1, ldc2, 8.0) # minimum 8 inches per ACI 318
     
-    # Tension development hook ldh (ACI 318 Section 25.4.3)
-    ldh = (0.02 * psi_e * lambda_val * fy_psi) / (math.sqrt(fc_psi)) * db # simplified
+    # Tension development hook ldh (ACI 318-19 Section 25.4.3)
+    # ldh = (0.02 * psi_e * fy * db) / (lambda * sqrt(f'c)) >= max(8*db, 6 in)
+    ldh = (0.02 * psi_e * fy_psi * db) / (max(lambda_val, 0.5) * math.sqrt(fc_psi))
     ldh_hook = max(ldh, 8.0 * db, 6.0)
     
     return DevelopmentResult(

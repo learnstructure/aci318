@@ -134,3 +134,29 @@ class RectangleSection:
             raise ValueError(f"Rebar depth must be within section height 0 and {self.h}.")
 
         self.layers.append(RebarLayer(area, depth, steel, num_bars, bar_size))
+
+    def get_weak_axis_section(self) -> 'RectangleSection':
+        """
+        Return an equivalent RectangleSection oriented for bending about the weak axis (Y-axis).
+        Swaps width and height (b_new = h, h_new = b) and maps perimeter rebar layers accordingly.
+        """
+        if not self.layers:
+            return RectangleSection(b=self.h, h=self.b, concrete=self.concrete, layers=[])
+
+        # Estimate effective cover from existing rebar layers
+        covers = [min(lyr.depth, self.h - lyr.depth) for lyr in self.layers if lyr.depth > 0]
+        cover = min(covers) if covers else 1.5
+
+        total_area = sum(lyr.area for lyr in self.layers)
+        steel = self.layers[0].steel
+
+        # In weak axis, section depth is b. Outer tension and compression layers placed at cover and b - cover
+        d1 = max(0.5, cover)
+        d2 = max(d1 + 0.5, self.b - cover)
+
+        weak_layers = [
+            RebarLayer(area=total_area / 2.0, depth=d1, steel=steel),
+            RebarLayer(area=total_area / 2.0, depth=d2, steel=steel),
+        ]
+        return RectangleSection(b=self.h, h=self.b, concrete=self.concrete, layers=weak_layers)
+
