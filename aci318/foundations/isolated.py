@@ -70,23 +70,52 @@ class IsolatedFooting:
 
         Pu = max(loads.Pu, 0.0)
         # LoadEffects contract specifies moments in kip-in
-        Mu_kipin = abs(loads.Mu)
+        Mu_kipin = abs(loads.Mu2 if loads.Mu2 != 0.0 else loads.Mu)
         Mu_ft = Mu_kipin / 12.0
+        Mu3_kipin = abs(loads.Mu3)
+        Mu3_ft = Mu3_kipin / 12.0
 
         # Footing area and section modulus
         area_ft2 = self.length * self.width
-        sx_ft3 = (self.width * (self.length ** 2)) / 6.0
-
-        # Soil bearing pressure (ksf)
-        q_avg = Pu / area_ft2 if area_ft2 > 0 else 0.0
-        q_ecc = Mu_ft / sx_ft3 if sx_ft3 > 0 else 0.0
-        q_max = q_avg + q_ecc
 
         status = "Passed"
         messages = []
 
+        # Soil bearing pressure (ksf) with kern & lift-off check
+        q_avg = Pu / max(area_ft2, 0.01) if area_ft2 > 0 else 0.0
+        q_ecc_y = 0.0
+        if Pu > 0.0 and area_ft2 > 0.0:
+            ex = Mu_ft / Pu
+            ey = Mu3_ft / Pu
+
+            if ex <= self.length / 6.0:
+                q_max_x = q_avg * (1.0 + 6.0 * ex / self.length)
+            elif ex < self.length / 2.0:
+                # Triangular bearing with lift-off (contact length = 3 * (L/2 - ex))
+                q_max_x = (2.0 * Pu) / (3.0 * self.width * max(self.length / 2.0 - ex, 0.01))
+            else:
+                q_max_x = 999.0
+                status = "Failed"
+                messages.append(f"Footing is unstable against overturning in X-direction (eccentricity e={ex:.2f} ft >= L/2={self.length/2.0:.2f} ft).")
+
+            if ey <= self.width / 6.0:
+                q_ecc_y = q_avg * (6.0 * ey / self.width)
+            elif ey < self.width / 2.0:
+                q_ecc_y = ((2.0 * Pu) / (3.0 * self.length * max(self.width / 2.0 - ey, 0.01))) - q_avg
+            else:
+                q_ecc_y = 999.0
+                status = "Failed"
+                messages.append(f"Footing is unstable against overturning in Y-direction (eccentricity e={ey:.2f} ft >= B/2={self.width/2.0:.2f} ft).")
+
+            q_max = q_max_x + max(q_ecc_y, 0.0)
+            q_ecc = max(q_max_x - q_avg, 0.0)
+        else:
+            q_max = 0.0
+            q_ecc = 0.0
+
         if q_max > self.allowable_q:
-            status = "Warning"
+            if status != "Failed":
+                status = "Warning"
             messages.append(f"Maximum soil bearing pressure ({q_max:.2f} ksf) exceeds allowable capacity ({self.allowable_q:.2f} ksf).")
 
         rebar = Rebar(bar_size=self.bar_size)
@@ -181,7 +210,9 @@ class IsolatedFooting:
         mu_x_kipin = (qu_x_psi * (self.width * 12.0) * (cant_x_in ** 2) / 2.0) / 1000.0
 
         cant_y_in = max(((self.width * 12.0) - self.col_c2) / 2.0, 0.0)
-        qu_y_psi = (qu_avg * 1000.0) / 144.0
+        y_cent_ft = (self.col_c2 / 2.0 + cant_y_in / 2.0) / 12.0
+        qu_y_ksf = qu_avg + q_ecc_y * (y_cent_ft / (self.width / 2.0)) if self.width > 0 else qu_avg
+        qu_y_psi = (qu_y_ksf * 1000.0) / 144.0
         mu_y_kipin = (qu_y_psi * (self.length * 12.0) * (cant_y_in ** 2) / 2.0) / 1000.0
 
         # Flexural steel area calculations (ACI 318-19 §13.3.2.1: As_min = 0.0018 * b * h)

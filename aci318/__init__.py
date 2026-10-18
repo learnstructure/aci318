@@ -25,6 +25,8 @@ from .detailing import (
 from .foundations.isolated import IsolatedFooting, IsolatedFootingDesignResult
 from .foundations.strip import StripFooting, StripFootingDesignResult
 from .foundations.combined import CombinedFooting, CombinedFootingDesignResult
+from .foundations.pilecap import PileCap, PileCapDesignResult
+from .foundations.raft import RaftFoundation, RaftFoundationDesignResult
 from .loads.load_effects import LoadEffects
 from .materials.concrete import Concrete
 from .materials.steel import Steel
@@ -86,6 +88,10 @@ __all__ = [
     "LoadEffects",
     "MarkdownReport",
     "OptimalBeamResult",
+    "PileCap",
+    "PileCapDesignResult",
+    "RaftFoundation",
+    "RaftFoundationDesignResult",
     "Rebar",
     "RebarLayer",
     "RectangleSection",

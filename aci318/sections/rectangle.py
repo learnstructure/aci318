@@ -72,6 +72,17 @@ class RectangleSection:
         return total_area, weighted_depth
 
     @property
+    def d_t(self) -> float:
+        """
+        Get distance from extreme compression fiber to centroid of extreme tension reinforcement layer (in).
+        Per ACI 318 Fig. R21.2.2a, this is used to calculate net tensile strain epsilon_t.
+        """
+        tension_layers = [lyr for lyr in self.layers if lyr.depth > self.centroid]
+        if not tension_layers:
+            return self.tension_steel[1]
+        return max(lyr.depth for lyr in tension_layers)
+
+    @property
     def compression_steel(self) -> Tuple[float, float]:
         """
         Helper property that returns (As_prime, d_prime) for primary compression reinforcement.

@@ -9,8 +9,8 @@ class DesignCode(ABC):
     """
 
     @abstractmethod
-    def get_phi_flexure(self, strain_t: float, spiral: bool = False) -> float:
-        """Get strength reduction factor (phi) for flexure based on net tensile strain."""
+    def get_phi_flexure(self, strain_t: float, spiral: bool = False, fy: float = 60.0) -> float:
+        """Get strength reduction factor (phi) for flexure based on net tensile strain and steel grade."""
         pass
 
     @abstractmethod
@@ -84,3 +84,16 @@ class DesignCode(ABC):
     ) -> float:
         """Get cracking torsion Tcr in kip-in."""
         pass
+
+    @abstractmethod
+    def get_hook_development_length(
+        self,
+        db: float,
+        fy: float,
+        fc: float,
+        lambda_val: float = 1.0,
+        is_epoxy: bool = False,
+    ) -> float:
+        """Get standard 90/180-degree hook development length ldh in inches."""
+        pass
+

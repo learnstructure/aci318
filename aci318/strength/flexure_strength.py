@@ -104,7 +104,11 @@ class FlexureStrength(StrengthChecker):
                 c_low = c
 
         a = beta_1 * c
-        strain_t = epsilon_cu * (d - c) / c
+        # ACI 318 Fig. R21.2.2a: Net tensile strain epsilon_t in extreme tension reinforcement layer dt
+        dt = getattr(self.section, "d_t", d)
+        if dt <= 0.0:
+            dt = d
+        strain_t = epsilon_cu * (dt - c) / c
 
         # Compute nominal moment Mn about centroid of tension steel or section centroid
         if hf > 0.0 and a > hf:
@@ -125,7 +129,7 @@ class FlexureStrength(StrengthChecker):
                 mn_steel += layer.area * (fs_i - 0.85 * fc) * (d - layer.depth)
 
         mn = mn_conc + mn_steel
-        phi = self.code.get_phi_flexure(strain_t)
+        phi = self.code.get_phi_flexure(strain_t, fy=fy)
         phi_mn = phi * mn
 
         status = "Passed"

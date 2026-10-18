@@ -53,13 +53,18 @@ def calculate_cracked_inertia(
     """
     fc = section.concrete.fc
     fc_psi = fc * 1000.0
-    b = getattr(section, "b_w", getattr(section, "b", 12.0))
     h = section.h
+    is_tbeam = isinstance(section, TBeamSection)
+    bw = getattr(section, "b_w", getattr(section, "b", 12.0))
+    bf = getattr(section, "b_f", getattr(section, "b", bw)) if is_tbeam else bw
+    hf = getattr(section, "h_f", 0.0) if is_tbeam else 0.0
 
     # Modular ratio n = Es / Ec
     if n_ratio is None:
-        ec_ksi = (57000.0 * math.sqrt(fc_psi)) / 1000.0
-        es_ksi = 29000.0
+        ec_ksi = getattr(section.concrete, "Ec", None)
+        if ec_ksi is None or ec_ksi <= 0.0:
+            ec_ksi = (57000.0 * math.sqrt(fc_psi)) / 1000.0
+        es_ksi = getattr(section.layers[0].steel, "Es", 29000.0) if getattr(section, "layers", None) else 29000.0
         n = es_ksi / max(ec_ksi, 100.0)
     else:
         n = float(n_ratio)
@@ -67,29 +72,36 @@ def calculate_cracked_inertia(
     as_tens, d_tens = section.tension_steel
     if as_tens <= 0.0 or d_tens <= 0.0:
         d_tens = max(h - 2.5, 1.0)
-        as_tens = 0.01 * b * d_tens
+        as_tens = 0.01 * bw * d_tens
 
     as_comp, d_comp = getattr(section, "compression_steel", (0.0, 0.0))
-
-    # Quadratic equation: A * (kd)^2 + B * (kd) + C = 0
-    # A = b / 2
-    # B = n * As + (n - 1) * As'
-    # C = - [ n * As * d + (n - 1) * As' * d' ]
-    A = b / 2.0
     n_minus_1 = max(n - 1.0, 0.0)
+
+    # First, test if neutral axis falls within flange (kd <= hf) or rectangular section:
+    b_effective = bf if is_tbeam else bw
+    A = b_effective / 2.0
     B = n * as_tens + n_minus_1 * as_comp
     C = - (n * as_tens * d_tens + n_minus_1 * as_comp * d_comp)
 
-    discriminant = B ** 2 - 4.0 * A * C
-    if discriminant < 0.0:
-        kd = 0.35 * d_tens
-    else:
-        kd = (-B + math.sqrt(discriminant)) / (2.0 * A)
+    disc = B ** 2 - 4.0 * A * C
+    kd = (-B + math.sqrt(max(disc, 0.0))) / (2.0 * A) if disc >= 0.0 else 0.35 * d_tens
 
-    kd = min(max(kd, 0.05 * d_tens), d_tens)
+    if is_tbeam and hf > 0.0 and kd > hf:
+        # Neutral axis falls below the flange into web:
+        A_t = bw / 2.0
+        B_t = (bf - bw) * hf + n * as_tens + n_minus_1 * as_comp
+        C_t = - (0.5 * (bf - bw) * (hf ** 2) + n * as_tens * d_tens + n_minus_1 * as_comp * d_comp)
+        disc_t = B_t ** 2 - 4.0 * A_t * C_t
+        if disc_t >= 0.0:
+            kd = (-B_t + math.sqrt(disc_t)) / (2.0 * A_t)
+
+        kd = min(max(kd, 0.05 * d_tens), d_tens)
+        icr_conc = (bw * (kd ** 3)) / 3.0 + ((bf - bw) * (hf ** 3)) / 12.0 + (bf - bw) * hf * ((kd - hf / 2.0) ** 2)
+    else:
+        kd = min(max(kd, 0.05 * d_tens), d_tens)
+        icr_conc = (b_effective * (kd ** 3)) / 3.0
 
     # Cracked moment of inertia
-    icr_conc = (b * (kd ** 3)) / 3.0
     icr_tens = n * as_tens * ((d_tens - kd) ** 2)
     icr_comp = n_minus_1 * as_comp * (((kd - d_comp) ** 2) if kd > d_comp else 0.0)
 

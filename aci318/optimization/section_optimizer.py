@@ -89,14 +89,15 @@ class BeamSectionOptimizer:
                     c_cost = vol_yd3_conc * self.concrete_cost_yd3
 
                     # Calculate steel weight and cost per foot (steel density = 490 lb/ft^3)
-                    as_total = design_res.provided_flexure_As
+                    vol_long_steel = (design_res.provided_flexure_As * 12.0) / 1728.0
+                    vol_stirrup_steel = 0.0
                     if design_res.required_shear_spacing > 0:
-                        # Add stirrup weight estimate per foot
-                        stirrup_perimeter_ft = (2.0 * b_val + 2.0 * h_val) / 12.0
-                        as_stirrup_per_ft = (12.0 / design_res.required_shear_spacing) * 0.22  # #3 stirrups
-                        as_total += as_stirrup_per_ft
+                        stirrup_perim_ft = (2.0 * max(b_val - 3.0, 2.0) + 2.0 * max(h_val - 3.0, 2.0)) / 12.0
+                        num_stirrups_per_ft = 12.0 / design_res.required_shear_spacing
+                        # #3 bar single closed loop has cross-sectional area 0.11 in^2
+                        vol_stirrup_steel = num_stirrups_per_ft * stirrup_perim_ft * (0.11 / 144.0)
 
-                    vol_ft3_steel = as_total / 144.0
+                    vol_ft3_steel = vol_long_steel + vol_stirrup_steel
                     weight_lb_steel = vol_ft3_steel * 490.0
                     s_cost = weight_lb_steel * self.steel_cost_lb
 

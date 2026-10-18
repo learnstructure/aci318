@@ -22,6 +22,8 @@ Designed with a clean single-responsibility architecture, `aci318` provides auto
     - `IsolatedFooting`: Spread footing design with allowable soil bearing pressure checks, 1-way shear, 2-way punching shear (with size effect $\lambda_s$), and orthogonal flexural reinforcement.
     - `StripFooting`: Continuous wall footing designer per linear foot of wall length, checking bearing capacity, one-way shear at distance $d$ from wall face, and transverse/longitudinal steel.
     - `CombinedFooting`: Two-column combined rectangular footing coordinator aligning footing centroid with resultant load, evaluating punching shear at both columns, critical one-way beam shear, and zero-shear longitudinal flexure.
+    - `PileCap`: Multi-pile cap foundation coordinator evaluating individual pile reactions under combined P-M-M, two-way punching shear around column and individual piles, one-way beam shear, and orthogonal flexural reinforcement.
+    - `RaftFoundation`: Mat / raft foundation coordinator evaluating soil bearing pressure with kern/lift-off checks, two-way column punching shear, one-way strip shear, and top/bottom two-way flexural reinforcement.
 - **Serviceability & Deflection Analysis:**
   - Cracked transformed section inertia $I_{cr}$ solving neutral axis depth $kd$.
   - Bischoff effective moment of inertia $I_e$ (ACI 318-19 Eq. 24.2.3.5a).
@@ -49,7 +51,7 @@ aci318/
 ├── loads/          # Standardized load contracts (LoadEffects dataclass)
 ├── strength/       # Core computational engines (Flexure, Shear, Torsion, Axial, Development)
 ├── members/        # High-level element coordinators (Beam, Column, Slab, Wall)
-├── foundations/    # Foundation designers (IsolatedFooting, StripFooting, CombinedFooting)
+├── foundations/    # Foundation designers (IsolatedFooting, StripFooting, CombinedFooting, PileCap, RaftFoundation)
 ├── optimization/   # Material cost & dimension optimization engines
 ├── detailing/      # Rebar placement & layout schemas
 ├── reports/        # Text and Markdown calculation report generators
@@ -173,6 +175,9 @@ design_res, detail_res = design_from_core(project, design_code="ACI 318-19")
 project.design_results["ACI318_19"] = design_res
 project.detailing_results["ACI318_19"] = detail_res
 ```
+
+See [`examples/ecosystem_pipeline.py`](examples/ecosystem_pipeline.py) for a complete multi-package engineering workflow connecting `struct_core` + `struct_load` (ASCE 7-22 ELF) + `fem3d` (3D FEA & combinations) + `aci318` (reinforced concrete design) + `struct_draw` (CAD DXF drawings).
+
 
 ---
 

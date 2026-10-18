@@ -34,6 +34,18 @@ class Column:
         self.tie_spacing = tie_spacing
         self.spiral = spiral
 
+    def check(self, loads: LoadEffects) -> ColumnDesignResult:
+        """
+        Evaluate structural capacity and demand-capacity ratios for given loads.
+        
+        Args:
+            loads: LoadEffects object containing Pu (kip), Mu (kip-in), Vu (kip).
+            
+        Returns:
+            ColumnDesignResult dataclass.
+        """
+        return self.design(loads)
+
     def design(self, loads: LoadEffects) -> ColumnDesignResult:
         """
         Coordinates axial, P-M interaction, and shear checks for the column member.

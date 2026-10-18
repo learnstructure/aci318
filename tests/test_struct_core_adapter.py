@@ -160,3 +160,60 @@ def test_design_from_core_converts_isolated_footing_results():
     assert elem_detail.element_id == "F1"
 
 
+def test_analysis_result_biaxial_moments_and_metric_units():
+    from aci318.adapters.struct_core_adapter import analysis_result_to_load_effects
+    from struct_core import Units
+
+    # 100 kN axial, Mz = 100 kN-m (major), My = 60 kN-m (minor), Vy = 40 kN, Vz = 25 kN
+    sf = BeamSectionForce(station=0.0, P=100.0, Vy=40.0, Vz=25.0, Mz=100.0, My=60.0)
+    ar = AnalysisResult(analysis_case_id="COMB1", element_results={1: ElementResult(element_id=1, forces=[sf])})
+
+    units = Units(force="kN", length="m", time="s", mass="kg", temperature="C")
+    loads = analysis_result_to_load_effects(1, ar, units=units)
+
+    assert loads is not None
+    # 100 kN * 0.22480894 = 22.48 kips
+    assert pytest.approx(loads.Pu, rel=1e-3) == 22.481
+    # 100 kN-m * 8.85074579 = 885.07 kip-in
+    assert pytest.approx(loads.Mu2, rel=1e-3) == 885.075
+    assert pytest.approx(loads.Mu, rel=1e-3) == 885.075
+    # 60 kN-m * 8.85074579 = 531.04 kip-in
+    assert pytest.approx(loads.Mu3, rel=1e-3) == 531.045
+    # Vy = 40 kN * 0.22480894 = 8.992 kips
+    assert pytest.approx(loads.Vu2, rel=1e-3) == 8.992
+    # Vz = 25 kN * 0.22480894 = 5.620 kips
+    assert pytest.approx(loads.Vu3, rel=1e-3) == 5.620
+
+
+def test_design_from_core_multiple_load_combinations_envelope():
+    from struct_core import Metadata, Units
+    node1 = Node(id=1, x=0.0, y=0.0)
+    node2 = Node(id=2, x=6.0, y=0.0)  # 6.0 meters
+    mat = ElasticMaterial(id="Conc", E=30000000.0, rho=2400.0)
+    sec = RectangularSection(id="B300x500", b=0.30, h=0.50)  # 0.30m x 0.50m
+    elem = BeamElement(id=1, start_node=1, end_node=2, material_id="Conc", section_id="B300x500")
+    model = StructuralModel(nodes=[node1, node2], materials=[mat], sections=[sec], elements=[elem])
+
+    # Combo 1: lower moment
+    sf1 = BeamSectionForce(station=0.0, P=0.0, Vy=30.0, Mz=60.0)
+    ar1 = AnalysisResult(analysis_case_id="1.4D", element_results={1: ElementResult(element_id=1, forces=[sf1], max_moment=60.0)})
+
+    # Combo 2: governing higher moment
+    sf2 = BeamSectionForce(station=0.0, P=0.0, Vy=55.0, Mz=110.0)
+    ar2 = AnalysisResult(analysis_case_id="1.2D+1.6L", element_results={1: ElementResult(element_id=1, forces=[sf2], max_moment=110.0)})
+
+    project = Project(
+        model=model,
+        analysis_results={"1.4D": ar1, "1.2D+1.6L": ar2},
+        metadata=Metadata(project_name="MultiComboBeam", units=Units(force="kN", length="m", time="s", mass="kg", temperature="C")),
+    )
+
+    # design_from_core should automatically envelope ar1 and ar2, designing against 110 kN-m
+    design_res, detail_res = design_from_core(project)
+    assert 1 in design_res.element_results
+    assert design_res.element_results[1].passed
+    # Check that the moment designed for was 110 kN-m * 8.85074579 kip-in/kN-m = 973.58 kip-in
+    assert pytest.approx(design_res.element_results[1].flexure.mu, rel=1e-2) == 973.58
+
+
+

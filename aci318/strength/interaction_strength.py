@@ -89,13 +89,22 @@ class InteractionStrength(StrengthChecker):
             if pn > pn_max:
                 continue
 
-            phi = self.code.get_phi_flexure(max(strain_t, 0.0))
+            is_spiral = getattr(sec, "is_spiral", getattr(sec, "spiral", False))
+            fy_layer = sec.layers[0].steel.fy if sec.layers else 60.0
+            phi = self.code.get_phi_flexure(max(strain_t, 0.0), spiral=is_spiral, fy=fy_layer)
             phi_pn = phi * pn
             phi_mn = phi * abs(mn)
 
             if pn >= -po_nominal and abs(mn) >= 0.0:
                 points.append((abs(mn), pn))
                 phi_points.append((phi_mn, phi_pn))
+
+        # Pure tension point (Pn = -Ast * fy, phi = 0.90)
+        ast = sum(lyr.area for lyr in sec.layers)
+        fy_tension = sec.layers[0].steel.fy if sec.layers else 60.0
+        p_nt = ast * fy_tension
+        points.append((0.0, -p_nt))
+        phi_points.append((0.0, -0.90 * p_nt))
 
         return PMInteractionResult(
             points=points,
@@ -110,6 +119,12 @@ class InteractionStrength(StrengthChecker):
         if not phi_points:
             return 0.0
 
+        p_vals = [p for _, p in phi_points]
+        p_max = max(p_vals)
+        p_min = min(p_vals)
+        if pu > p_max or pu < p_min:
+            return 0.0
+
         for i in range(len(phi_points) - 1):
             m1, p1 = phi_points[i]
             m2, p2 = phi_points[i + 1]
@@ -120,7 +135,7 @@ class InteractionStrength(StrengthChecker):
                     return max(0.0, m1 + frac * (m2 - m1))
                 else:
                     return max(m1, m2)
-        return max(m for m, _ in phi_points) if phi_points else 0.0
+        return 0.0
 
     @staticmethod
     def _interpolate_capacity_pu_for_eccentricity(
@@ -176,13 +191,43 @@ class InteractionStrength(StrengthChecker):
             )
 
         phi_pn_max = max(p for _, p in pm_res_x.phi_points)
+        phi_pn_min = min(p for _, p in pm_res_x.phi_points)
+
+        # Axial demand-capacity ratio
+        if pu >= 0.0:
+            axial_ratio = pu / max(phi_pn_max, 1e-4)
+        else:
+            axial_ratio = abs(pu) / max(abs(phi_pn_min), 1e-4)
+
+        messages = []
+        if pu > phi_pn_max:
+            return InteractionResult(
+                axial_ratio=axial_ratio,
+                flexure_ratio=0.0,
+                demand_capacity_ratio=max(axial_ratio, 1.5),
+                status="Failed",
+                messages=[f"Factored axial compression Pu={pu:.1f} kip exceeds maximum design axial capacity phi*Pn,max={phi_pn_max:.1f} kip."],
+                phi_mn_x=0.0,
+                method_used="Axial Capacity Check (ACI 318 §22.4.2.1)",
+            )
+        elif pu < phi_pn_min:
+            return InteractionResult(
+                axial_ratio=axial_ratio,
+                flexure_ratio=0.0,
+                demand_capacity_ratio=max(axial_ratio, 1.5),
+                status="Failed",
+                messages=[f"Factored axial tension Pu={pu:.1f} kip exceeds design tension capacity phi*Pnt={abs(phi_pn_min):.1f} kip."],
+                phi_mn_x=0.0,
+                method_used="Axial Tension Check (ACI 318 §22.4.3)",
+            )
+
         cap_mux = self._interpolate_capacity_mu(pm_res_x.phi_points, pu)
 
         # 2. Case A: Pure Uniaxial Bending (Muy is zero or negligible)
         if muy <= 1e-4:
-            dcr = mux / cap_mux if cap_mux > 0.0 else (1.5 if mux > 0 else 0.0)
+            flexure_ratio = (mux / cap_mux) if cap_mux > 0.0 else (0.0 if mux == 0.0 else 999.0)
+            dcr = max(axial_ratio, flexure_ratio)
             status = "Passed"
-            messages = []
             if dcr > 1.0:
                 status = "Failed"
                 messages.append(f"P-M Interaction demand/capacity ratio {dcr:.2f} exceeds 1.0.")
@@ -191,8 +236,8 @@ class InteractionStrength(StrengthChecker):
                 messages.append(f"P-M Interaction demand/capacity ratio {dcr:.2f} is near capacity.")
 
             return InteractionResult(
-                axial_ratio=pu / max(phi_pn_max, 1.0),
-                flexure_ratio=mux / max(cap_mux, 1.0),
+                axial_ratio=axial_ratio,
+                flexure_ratio=flexure_ratio,
                 demand_capacity_ratio=dcr,
                 status=status,
                 messages=messages,
@@ -204,9 +249,9 @@ class InteractionStrength(StrengthChecker):
         # Circular columns: resultant moment vector
         if isinstance(self.section, CircularSection):
             mu_res = math.hypot(mux, muy)
-            dcr = mu_res / cap_mux if cap_mux > 0.0 else (1.5 if mu_res > 0 else 0.0)
+            flexure_ratio = (mu_res / cap_mux) if cap_mux > 0.0 else (0.0 if mu_res == 0.0 else 999.0)
+            dcr = max(axial_ratio, flexure_ratio)
             status = "Passed"
-            messages = []
             if dcr > 1.0:
                 status = "Failed"
                 messages.append(f"Biaxial P-M interaction ratio {dcr:.2f} exceeds 1.0.")
@@ -215,8 +260,8 @@ class InteractionStrength(StrengthChecker):
                 messages.append(f"Biaxial P-M interaction ratio {dcr:.2f} is near capacity.")
 
             return InteractionResult(
-                axial_ratio=pu / max(phi_pn_max, 1.0),
-                flexure_ratio=mu_res / max(cap_mux, 1.0),
+                axial_ratio=axial_ratio,
+                flexure_ratio=flexure_ratio,
                 demand_capacity_ratio=dcr,
                 status=status,
                 messages=messages,
@@ -236,7 +281,6 @@ class InteractionStrength(StrengthChecker):
         ry = muy / max(cap_muy, 1e-4) if cap_muy > 0.0 else (1.5 if muy > 0 else 0.0)
 
         # Method 1: Bresler Load Contour Interaction (PCA / Parme Method)
-        # Exponent alpha: typically 1.15 to 1.5 based on Pu / (phi*P0)
         ag = self.section.gross_area
         fc = self.section.concrete.fc
         ast = sum(lyr.area for lyr in self.section.layers) if self.section.layers else 0.0
@@ -248,7 +292,6 @@ class InteractionStrength(StrengthChecker):
         dcr_contour = (rx ** alpha + ry ** alpha) ** (1.0 / alpha)
 
         # Method 2: Bresler Reciprocal Load Method (ACI 318-19 Section 10.5.2)
-        # 1/phi*Pn = 1/phi*Pnx + 1/phi*Pny - 1/phi*P0  (applicable when Pu >= 0.10 * phi * fc * Ag)
         min_pu_bresler = 0.10 * 0.65 * fc * ag
         dcr_bresler = None
         if pu >= min_pu_bresler:
@@ -263,14 +306,13 @@ class InteractionStrength(StrengthChecker):
                     phi_pn_bresler = 1.0 / inv_pn
                     dcr_bresler = pu / phi_pn_bresler
 
-        governing_dcr = dcr_contour
+        governing_dcr = max(axial_ratio, dcr_contour)
         method_desc = f"Bresler Load Contour Method (alpha={alpha:.2f}, ACI 318-19 §10.5)"
         if dcr_bresler is not None and dcr_bresler > dcr_contour:
-            governing_dcr = dcr_bresler
+            governing_dcr = max(axial_ratio, dcr_bresler)
             method_desc = "Bresler Reciprocal Load Method (ACI 318-19 §10.5.2)"
 
         status = "Passed"
-        messages = []
         if governing_dcr > 1.0:
             status = "Failed"
             messages.append(f"Biaxial P-M-M interaction ratio {governing_dcr:.2f} exceeds 1.0.")
@@ -279,7 +321,7 @@ class InteractionStrength(StrengthChecker):
             messages.append(f"Biaxial P-M-M interaction ratio {governing_dcr:.2f} is near capacity.")
 
         return InteractionResult(
-            axial_ratio=pu / max(phi_pn_max, 1.0),
+            axial_ratio=axial_ratio,
             flexure_ratio=max(rx, ry),
             demand_capacity_ratio=round(governing_dcr, 3),
             status=status,

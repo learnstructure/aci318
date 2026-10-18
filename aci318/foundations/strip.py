@@ -74,22 +74,34 @@ class StripFooting:
         validate_load_effects(loads)
 
         pu_per_ft = max(loads.Pu, 0.0)
-        mu_per_ft = abs(loads.Mu) / 12.0 if abs(loads.Mu) > 100.0 else abs(loads.Mu)
+        # LoadEffects specifies moment in kip-in (or kip-in/ft). Convert to kip-ft/ft.
+        mu_per_ft = abs(loads.Mu) / 12.0
 
         # Soil bearing pressure per linear foot: Area = B * 1.0 ft
         b_ft = self.width
         area_per_ft = b_ft * 1.0
-        sx_per_ft = (1.0 * (b_ft ** 2)) / 6.0
-
-        q_avg = pu_per_ft / max(area_per_ft, 0.1)
-        q_ecc = mu_per_ft / max(sx_per_ft, 0.1)
-        q_max = q_avg + q_ecc
 
         status = "Passed"
         messages = []
 
+        q_avg = pu_per_ft / max(area_per_ft, 0.01) if area_per_ft > 0 else 0.0
+        if pu_per_ft > 0.0 and b_ft > 0.0:
+            e = mu_per_ft / pu_per_ft
+            if e <= b_ft / 6.0:
+                q_max = q_avg * (1.0 + 6.0 * e / b_ft)
+            elif e < b_ft / 2.0:
+                # Triangular bearing with lift-off
+                q_max = (2.0 * pu_per_ft) / (3.0 * max(b_ft / 2.0 - e, 0.01))
+            else:
+                q_max = 999.0
+                status = "Failed"
+                messages.append(f"Strip footing is unstable against overturning (eccentricity e={e:.2f} ft >= B/2={b_ft/2.0:.2f} ft).")
+        else:
+            q_max = 0.0
+
         if q_max > self.allowable_q:
-            status = "Warning"
+            if status != "Failed":
+                status = "Warning"
             messages.append(
                 f"Maximum soil pressure ({q_max:.2f} ksf) exceeds allowable bearing capacity ({self.allowable_q:.2f} ksf)."
             )
@@ -97,8 +109,8 @@ class StripFooting:
         t_rebar = Rebar(bar_size=self.transverse_bar_size)
         d = max(self.thickness - self.cover - (t_rebar.diameter / 2.0), 1.0)
 
-        # Factored net soil pressure in psi (1.2 service-to-factored estimation)
-        qu_ksf = max(q_max * 1.2, 0.1)
+        # Factored net soil pressure in psi
+        qu_ksf = max(q_max, 0.01)
         qu_psi = (qu_ksf * 1000.0) / 144.0
 
         # One-way shear at distance d from wall face

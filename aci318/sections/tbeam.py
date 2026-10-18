@@ -83,6 +83,18 @@ class TBeamSection:
         weighted_depth = sum(lyr.depth * lyr.area for lyr in tension_layers) / total_area
         return total_area, weighted_depth
 
+    @property
+    def d_t(self) -> float:
+        """
+        Get distance from extreme compression fiber to centroid of extreme tension reinforcement layer (in).
+        Per ACI 318 Fig. R21.2.2a, this is used to calculate net tensile strain epsilon_t.
+        """
+        tension_layers = [lyr for lyr in self.layers if lyr.depth > self.centroid]
+        if not tension_layers:
+            return self.tension_steel[1]
+        return max(lyr.depth for lyr in tension_layers)
+
+
     def add_rebar_layer(
         self,
         area: float = None,

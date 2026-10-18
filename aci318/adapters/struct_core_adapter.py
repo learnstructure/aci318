@@ -92,7 +92,18 @@ def _unwrap_model(
     if isinstance(model_or_project, Project):
         model = model_or_project.model
         if analysis_result is None:
-            analysis_result = model_or_project.analysis_result
+            # If multiple analysis results (e.g. load combinations) are present and no single case is selected,
+            # synthesize the governing envelope across all combinations for code design.
+            if (
+                model_or_project.analysis_results
+                and not model_or_project.active_analysis_case
+                and not any(str(k).lower() == "envelope" for k in model_or_project.analysis_results)
+                and len(model_or_project.analysis_results) > 1
+            ):
+                from struct_core.analysis_result.superposition import envelope_results
+                analysis_result = envelope_results(list(model_or_project.analysis_results.values()))
+            else:
+                analysis_result = model_or_project.analysis_result
     else:
         model = model_or_project
 
@@ -122,43 +133,60 @@ def analysis_result_to_load_effects(
         return None
 
     max_pu = float(getattr(elem_res, "max_axial", 0.0) or 0.0)
-    max_mu = float(getattr(elem_res, "max_moment", 0.0) or 0.0)
-    max_vu = float(getattr(elem_res, "max_shear", 0.0) or 0.0)
+    max_mz = float(getattr(elem_res, "max_moment", 0.0) or 0.0)
+    max_my = 0.0
+    max_vy = float(getattr(elem_res, "max_shear", 0.0) or 0.0)
+    max_vz = 0.0
     max_tu = 0.0
 
     station_forces = getattr(elem_res, "forces", None) or getattr(elem_res, "section_forces", None) or []
     for sf in station_forces:
         p = abs(float(getattr(sf, "P", getattr(sf, "p", getattr(sf, "fx", 0.0))) or 0.0))
-        m_z = abs(float(getattr(sf, "Mz", getattr(sf, "mz", getattr(sf, "m", 0.0))) or 0.0))
-        m_y = abs(float(getattr(sf, "My", getattr(sf, "my", 0.0)) or 0.0))
-        m = max(m_z, m_y)
-        v_y = abs(float(getattr(sf, "Vy", getattr(sf, "vy", getattr(sf, "v", 0.0))) or 0.0))
-        v_z = abs(float(getattr(sf, "Vz", getattr(sf, "vz", 0.0)) or 0.0))
-        v = max(v_y, v_z)
+        # Local 3-axis bending (major / Mz / M3)
+        m_z = abs(float(getattr(sf, "M3", getattr(sf, "m3", getattr(sf, "Mz", getattr(sf, "mz", getattr(sf, "m", 0.0))))) or 0.0))
+        # Local 2-axis bending (minor / My / M2)
+        m_y = abs(float(getattr(sf, "M2", getattr(sf, "m2", getattr(sf, "My", getattr(sf, "my", 0.0)))) or 0.0))
+        # Local 2-axis shear (major / Vy / V2)
+        v_y = abs(float(getattr(sf, "V2", getattr(sf, "v2", getattr(sf, "Vy", getattr(sf, "vy", getattr(sf, "v", 0.0))))) or 0.0))
+        # Local 3-axis shear (minor / Vz / V3)
+        v_z = abs(float(getattr(sf, "V3", getattr(sf, "v3", getattr(sf, "Vz", getattr(sf, "vz", 0.0)))) or 0.0))
         t = abs(float(getattr(sf, "T", getattr(sf, "t", getattr(sf, "mx", 0.0))) or 0.0))
 
         max_pu = max(max_pu, p)
-        max_mu = max(max_mu, m)
-        max_vu = max(max_vu, v)
+        max_mz = max(max_mz, m_z)
+        max_my = max(max_my, m_y)
+        max_vy = max(max_vy, v_y)
+        max_vz = max(max_vz, v_z)
         max_tu = max(max_tu, t)
 
     if units is not None:
         f_conv = conversion_factor(units, PRESETS["kip, in, s, °F"], "force")
-        m_conv = conversion_factor(units, PRESETS["kip, ft, s, °F"], "moment")
+        m_conv = conversion_factor(units, PRESETS["kip, in, s, °F"], "moment")
     elif is_metric:
-        # Standard SI (kN, kN-m) to US Customary (kips, kip-ft)
+        # Standard SI (kN, kN-m) to US Customary (kips, kip-in)
         f_conv = conversion_factor(PRESETS["kN, m, s, °C"], PRESETS["kip, in, s, °F"], "force")
-        m_conv = conversion_factor(PRESETS["kN, m, s, °C"], PRESETS["kip, ft, s, °F"], "moment")
+        m_conv = conversion_factor(PRESETS["kN, m, s, °C"], PRESETS["kip, in, s, °F"], "moment")
     else:
         f_conv = 1.0
         m_conv = 1.0
 
     max_pu *= f_conv
-    max_mu *= m_conv
-    max_vu *= f_conv
+    max_mz *= m_conv
+    max_my *= m_conv
+    max_vy *= f_conv
+    max_vz *= f_conv
     max_tu *= m_conv
 
-    return LoadEffects(Pu=max_pu, Mu=max_mu, Vu=max_vu, Tu=max_tu)
+    return LoadEffects(
+        Pu=max_pu,
+        Mu=max_mz,
+        Mu2=max_mz,
+        Mu3=max_my,
+        Vu=max_vy,
+        Vu2=max_vy,
+        Vu3=max_vz,
+        Tu=max_tu,
+    )
 
 
 def beam_result_to_core(
@@ -526,9 +554,16 @@ def isolated_footing_result_to_core(
         passed=bool(result.status != "Failed"),
     )
 
-    L_in = float(getattr(result, "length", 7.0)) * 12.0
-    W_in = float(getattr(result, "width", 7.0)) * 12.0
-    cover = 3.0
+    if hasattr(result, "_metric_dims"):
+        L_disp, W_disp, T_disp = result._metric_dims
+        is_metric_ftg = True
+    else:
+        L_disp = float(getattr(result, "length", 7.0)) * 12.0
+        W_disp = float(getattr(result, "width", 7.0)) * 12.0
+        T_disp = float(getattr(result, "thickness", 18.0))
+        is_metric_ftg = False
+
+    cover = 75.0 if is_metric_ftg else 3.0
 
     items: List[BarScheduleItem] = []
     bars_list: List[Bar] = []
@@ -539,10 +574,11 @@ def isolated_footing_result_to_core(
             sz_num = _parse_bar_size_num(bp.bar_size)
             qty = int(bp.count)
             is_y = "y" in str(bp.location).lower()
-            span_dim = W_in if is_y else L_in
-            cut_len = round(max(12.0, span_dim - 2.0 * cover), 1)
+            span_dim = W_disp if is_y else L_disp
+            cut_len = round(max(12.0 if not is_metric_ftg else 300.0, span_dim - 2.0 * cover), 1)
             tot_len = round(qty * cut_len, 1)
-            wt = round((tot_len / 12.0) * _get_bar_unit_weight(sz_num), 2)
+            unit_wt = (_get_bar_unit_weight(sz_num) / 12.0) if not is_metric_ftg else (_get_bar_unit_weight(sz_num) * 3.28084 / 1000.0)
+            wt = round(tot_len * unit_wt, 2)
             tot_wt += wt
             mark_prefix = element_id if str(element_id).upper().startswith("F") else f"F{element_id}"
             mark = f"{mark_prefix}-{'Y' if is_y else 'X'}"
@@ -561,7 +597,7 @@ def isolated_footing_result_to_core(
             bars_list.append(Bar(mark=mark, size=sz_num, count=qty, length=cut_len, weight=wt))
 
     bar_layout = BarLayout(
-        bottom_layers=[RebarLayer(depth=round(float(getattr(result, "thickness", 18.0)) - cover, 1), bars=bars_list)],
+        bottom_layers=[RebarLayer(depth=round(T_disp - cover, 1), bars=bars_list)],
     )
     bar_schedule = BarSchedule(items=items, total_weight=round(tot_wt, 2))
 
@@ -571,6 +607,12 @@ def isolated_footing_result_to_core(
         bar_layout=bar_layout,
         bar_schedule=bar_schedule,
     )
+    setattr(detailing_res, "_length_in", L_disp)
+    setattr(detailing_res, "_width_in", W_disp)
+    setattr(detailing_res, "_thickness_in", T_disp)
+    setattr(design_res, "_length_in", L_disp)
+    setattr(design_res, "_width_in", W_disp)
+    setattr(design_res, "_thickness_in", T_disp)
     return design_res, detailing_res
 
 
@@ -591,17 +633,23 @@ def design_from_core(
     """
     model, analysis_result = _unwrap_model(model_or_project, analysis_result)
 
-    if design_result is None and isinstance(model_or_project, Project):
-        design_result = model_or_project.design_result
-    if detailing_result is None and isinstance(model_or_project, Project):
-        detailing_result = model_or_project.detailing_result
+    units = (
+        getattr(getattr(model_or_project, "metadata", None), "units", None)
+        or getattr(getattr(model, "metadata", None), "units", None)
+        or getattr(model_or_project, "units", None)
+    )
 
-    units = getattr(getattr(model_or_project, "metadata", None), "units", None)
+    if design_result is None:
+        if analysis_result is not None and model.elements:
+            design_result = _run_member_design(model, analysis_result, units=units)
+        elif isinstance(model_or_project, Project):
+            design_result = model_or_project.design_result
 
-    if design_result is None and analysis_result is not None and model.elements:
-        design_result = _run_member_design(model, analysis_result, units=units)
-    if detailing_result is None and isinstance(design_result, Mapping) and design_result:
-        detailing_result = design_result
+    if detailing_result is None:
+        if isinstance(design_result, Mapping) and design_result:
+            detailing_result = design_result
+        elif isinstance(model_or_project, Project):
+            detailing_result = model_or_project.detailing_result
 
     if design_result is None and detailing_result is None:
         raise ValueError(
@@ -809,6 +857,8 @@ def _run_member_design(
             setattr(col_res, "_elem_len_in", elem_len_in)
             setattr(col_res, "_b_in", dia if is_circular else b)
             setattr(col_res, "_h_in", dia if is_circular else h)
+            setattr(col_res, "Mu", loads.Mu)
+            setattr(col_res, "Vu", loads.Vu)
             member_results[elem_id] = col_res
         else:
             section = RectangleSection(b=b, h=h, concrete=concrete)
@@ -817,6 +867,8 @@ def _run_member_design(
             setattr(beam_res, "_elem_len_in", elem_len_in)
             setattr(beam_res, "_b_in", b)
             setattr(beam_res, "_h_in", h)
+            setattr(beam_res, "Mu", loads.Mu)
+            setattr(beam_res, "Vu", loads.Vu)
             member_results[elem_id] = beam_res
 
     # -------------------------------------------------------------------------
@@ -884,12 +936,34 @@ def _run_member_design(
             mu_kipft = moment_f * m_conv
             vu_kip = horiz_f * f_conv
 
-            # Spread footing sizing: allowable soil bearing q_allow = 4.0 ksf
+            # Spread footing sizing: allowable soil bearing q_allow = 4.0 ksf (approx 200 kPa)
             allowable_q = 4.0
             areq = pu_kip / allowable_q
-            ftg_l = max(4.0, round(math.sqrt(max(4.0, areq)) + 0.5, 0))
-            ftg_w = ftg_l
-            ftg_h = 16.0
+            if is_metric_model:
+                # Direct metric calculation to avoid odd conversions (e.g. 1219.2 mm, 406.4 mm)
+                q_kpa = 200.0
+                areq_m2 = vert_f / q_kpa
+                l_m = max(1.20, math.ceil(math.sqrt(max(1.0, areq_m2)) * 10.0) / 10.0)
+                w_m = l_m
+                col_b_m = col_b * 0.0254
+                cant_m = max(0.2, (l_m - col_b_m) / 2.0)
+                # Thickness based on shear depth: d >= cant / 2.2; h = d + cover (0.075m)
+                h_m = max(0.35, math.ceil((cant_m / 2.2 + 0.075) * 20.0) / 20.0)
+                L_mm = round(l_m * 1000.0, 1)
+                W_mm = round(w_m * 1000.0, 1)
+                H_mm = round(h_m * 1000.0, 1)
+
+                ftg_l = l_m * 3.28084
+                ftg_w = w_m * 3.28084
+                ftg_h = h_m * 39.3700787
+            else:
+                ftg_l = max(4.0, round(math.sqrt(max(4.0, areq)) + 0.5, 0))
+                ftg_w = ftg_l
+                cant_in = max(6.0, (ftg_l * 12.0 - col_b) / 2.0)
+                ftg_h = max(14.0, round((cant_in / 2.2 + 3.0) / 2.0) * 2.0)
+                L_mm = ftg_l * 12.0
+                W_mm = ftg_w * 12.0
+                H_mm = ftg_h
 
             concrete_mat = next(
                 (m for m in model.materials if "conc" in str(getattr(m, "id", "")).lower() or "conc" in str(getattr(m, "name", "")).lower()),
@@ -910,7 +984,8 @@ def _run_member_design(
                 code=code,
                 member_id=ftg_id,
             )
-            ftg_res = ftg.design(LoadEffects(Pu=pu_kip, Mu=mu_kipft, Vu=vu_kip))
+            ftg_res = ftg.design(LoadEffects(Pu=pu_kip, Mu=mu_kipft * 12.0, Vu=vu_kip))
+            setattr(ftg_res, "_metric_dims", (L_mm, W_mm, H_mm))
             member_results[ftg_id] = ftg_res
 
     return member_results
@@ -958,7 +1033,19 @@ def _section_dimensions(sec_schema: Any, units: Optional[Any] = None) -> Tuple[f
 
 
 def _is_column_member(element: Any, nodes_by_id: Dict[Any, Any]) -> bool:
-    """Heuristically classify an element as a column based on node geometry."""
+    """Classify an element as a column based on name, section, or 3D node geometry."""
+    name = str(getattr(element, "name", "") or "").lower()
+    if name.startswith("c") or "col" in name:
+        return True
+    if name.startswith("b") or "beam" in name:
+        return False
+
+    sec_id = str(getattr(element, "section_id", "") or "").lower()
+    if "col" in sec_id:
+        return True
+    if "beam" in sec_id or "bm" in sec_id:
+        return False
+
     start_node = nodes_by_id.get(getattr(element, "start_node", None))
     end_node = nodes_by_id.get(getattr(element, "end_node", None))
     if start_node is None or end_node is None:
@@ -967,5 +1054,13 @@ def _is_column_member(element: Any, nodes_by_id: Dict[Any, Any]) -> bool:
     dx = abs(float(getattr(end_node, "x", 0.0)) - float(getattr(start_node, "x", 0.0)))
     dy = abs(float(getattr(end_node, "y", 0.0)) - float(getattr(start_node, "y", 0.0)))
     dz = abs(float(getattr(end_node, "z", 0.0)) - float(getattr(start_node, "z", 0.0)))
-    height_diff = max(dy, dz)
-    return height_diff > 1.5 * dx
+
+    # In 3D space frames with non-zero Z coordinates, Z is vertical elevation:
+    # A column is vertical: dz is significant, while horizontal span sqrt(dx^2 + dy^2) is small.
+    # In 2D plane frames (all Z == 0), Y is vertical elevation: dy is significant, while dx is small.
+    is_3d = any(getattr(n, "z", 0.0) != 0.0 for n in nodes_by_id.values())
+    if is_3d:
+        horiz_span = math.hypot(dx, dy)
+        return dz > 1.5 * horiz_span
+    else:
+        return dy > 1.5 * dx

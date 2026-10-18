@@ -15,6 +15,10 @@ class TorsionStrength(StrengthChecker):
         - ACI 318-19 §22.7.7.1: Cross-Sectional Dimension Limits for Torsion
     """
 
+    def __init__(self, section, code, fyt: float = 60.0) -> None:
+        super().__init__(section, code)
+        self.fyt = fyt
+
     def check(self, loads: LoadEffects) -> TorsionResult:
         """
         Perform torsional design check for given factored loads.
@@ -39,7 +43,7 @@ class TorsionStrength(StrengthChecker):
         cover = 1.5
         stirrup_db = 0.375
         fy = 60.0
-        fyt = 60.0
+        fyt = self.fyt
 
         if self.section.layers:
             fy = self.section.layers[-1].steel.fy
@@ -58,12 +62,17 @@ class TorsionStrength(StrengthChecker):
 
         t_th = self.code.get_threshold_torsion(fc, Acp, pcp, Pu, Acp, lambda_val)
         t_cr = self.code.get_cracking_torsion(fc, Acp, pcp, Pu, Acp, lambda_val)
+        phi_t_th = phi_t * t_th
 
         messages = []
         status = "Passed"
 
-        if Tu <= t_th:
-            messages.append(f"Factored torsion Tu={Tu:.2f} kip-in is <= threshold torsion Tth={t_th:.2f} kip-in. Torsion effects can be neglected.")
+        # ACI 318-19 §22.7.1.1: Torsion effects can be neglected if Tu <= phi * Tth
+        if Tu <= phi_t_th:
+            messages.append(
+                f"Factored torsion Tu={Tu:.2f} kip-in is <= phi * threshold torsion phi*Tth={phi_t_th:.2f} kip-in "
+                f"(Tth={t_th:.2f} kip-in). Torsion effects can be neglected."
+            )
             return TorsionResult(
                 tn_nominal=0.0,
                 phi_tn=0.0,
@@ -73,7 +82,7 @@ class TorsionStrength(StrengthChecker):
                 cracking_torsion=t_cr,
                 status="Passed",
                 messages=messages,
-                demand_capacity_ratio=Tu / t_th if t_th > 0 else 0.0,
+                demand_capacity_ratio=Tu / phi_t_th if phi_t_th > 0 else 0.0,
             )
 
         # Cross-sectional dimension limit check (§22.7.7.1)
@@ -84,8 +93,8 @@ class TorsionStrength(StrengthChecker):
         torsion_stress_psi = (tu_psi_in * ph) / (1.7 * (Aoh ** 2))
         combined_stress = math.sqrt(vu_psi ** 2 + torsion_stress_psi ** 2)
 
-        Vc_kip = self.code.get_vc(fc, b, d, Pu, Acp, lambda_val=lambda_val)
-        vc_psi = (Vc_kip * 1000.0) / (b * d)
+        # For cross-sectional limits with stirrups (ACI 318 §22.7.7.1), Vc/(bw*d) = 2*lambda*sqrt(f'c)
+        vc_psi = 2.0 * lambda_val * math.sqrt(fc_psi)
         max_allowed_stress = phi_t * (vc_psi + 8.0 * math.sqrt(fc_psi))
 
         if combined_stress > max_allowed_stress:

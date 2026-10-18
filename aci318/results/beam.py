@@ -17,8 +17,6 @@ class BeamCheckResult:
     messages: List[str] = field(default_factory=list)
 
 
-# Alias for backward compatibility
-BeamDesignResultOld = BeamCheckResult
 
 
 @dataclass

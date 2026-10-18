@@ -91,9 +91,6 @@ class Beam:
             messages=messages,
         )
 
-    # Alias for backward compatibility
-    def design_old(self, loads: LoadEffects) -> BeamCheckResult:
-        return self.check(loads)
 
     def design(self, loads: LoadEffects, fy_flexure: float = 60.0) -> BeamDesignResult:
         """
@@ -165,19 +162,16 @@ class Beam:
                     if flexure_res.demand_capacity_ratio > 1.0:
                         continue
 
-                    stirrup_rebar = Rebar(bar_size=self.stirrup_bar_size)
-                    av = self.stirrup_legs * stirrup_rebar.area
-                    shear_res = ShearStrength(
-                        trial_sec,
-                        self.code,
-                        av=av,
-                        s=self.stirrup_spacing,
-                        fy_shear=self.fy_shear,
-                    ).check(LoadEffects(Vu=Vu))
-                    if shear_res.demand_capacity_ratio > 1.0:
+                    # Cross-section shear capacity limit (ACI 318 §22.5.1.2: Vs <= 8*sqrt(fc)*bw*d)
+                    lambda_val = self.code.get_lambda_(self.section.concrete)
+                    phi_shear = self.code.get_phi_shear()
+                    fc_psi = fc * 1000.0
+                    Vc_trial = self.code.get_vc(fc, b, effective_depth, loads.Pu, lambda_val=lambda_val)
+                    Vs_max_trial = (8.0 * math.sqrt(fc_psi) * b * effective_depth) / 1000.0
+                    if Vu > phi_shear * (Vc_trial + Vs_max_trial):
                         continue
 
-                    selected_trial = (size, n, area, trial_sec, flexure_res, shear_res)
+                    selected_trial = (size, n, area, trial_sec, flexure_res)
                     break
                 if selected_trial is not None:
                     break
@@ -186,19 +180,18 @@ class Beam:
                 status = "Failed"
                 messages.append("No reinforcement layout satisfied the demand-capacity constraints.")
             else:
-                size, n, area, trial_sec, flexure_res, shear_res = selected_trial
+                size, n, area, trial_sec, flexure_res = selected_trial
                 required_As = min_As
                 provided_As = area
                 suggested_bars = f"{n} {size}"
                 final_trial_section = trial_sec
 
-                if flexure_res.status == "Failed" or shear_res.status == "Failed":
+                if flexure_res.status == "Failed":
                     status = "Failed"
-                elif flexure_res.status == "Warning" or shear_res.status == "Warning":
+                elif flexure_res.status == "Warning":
                     status = "Warning"
 
                 messages.extend(flexure_res.messages)
-                messages.extend(shear_res.messages)
 
         # Shear & Torsion Stirrup Spacing Determination
         torsion_res = None
@@ -230,6 +223,19 @@ class Beam:
                 suggested_spacing = math.floor(s_design * 2.0) / 2.0
                 if suggested_spacing < 3.0:
                     suggested_spacing = 3.0
+
+                shear_res = ShearStrength(
+                    final_trial_section,
+                    self.code,
+                    av=av,
+                    s=suggested_spacing,
+                    fy_shear=self.fy_shear,
+                ).check(LoadEffects(Vu=Vu))
+                if shear_res.status == "Failed":
+                    status = "Failed"
+                elif shear_res.status == "Warning" and status != "Failed":
+                    status = "Warning"
+                messages.extend(shear_res.messages)
 
         if Tu > 0.0:
             torsion_checker = TorsionStrength(final_trial_section, self.code)
