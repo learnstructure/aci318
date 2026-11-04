@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Any, List, Tuple
 from aci318.materials.concrete import Concrete
 from aci318.materials.steel import Steel
-from aci318.sections.rectangle import RebarLayer
+from aci318.sections.rectangle import DEFAULT_COVER, RebarLayer
 from aci318.validators.geometry import validate_flange_geometry
 
 
@@ -18,6 +18,7 @@ class TBeamSection:
         h: Total section height in inches.
         concrete: Concrete material object.
         layers: List of longitudinal reinforcement layers.
+        cover: Clear cover to the transverse reinforcement in inches.
     """
     b_f: float
     h_f: float
@@ -25,9 +26,12 @@ class TBeamSection:
     h: float
     concrete: Concrete
     layers: List[RebarLayer] = field(default_factory=list)
+    cover: float = DEFAULT_COVER
 
     def __post_init__(self) -> None:
         validate_flange_geometry(self.b_f, self.h_f, self.b_w, self.h)
+        if self.cover <= 0:
+            raise ValueError("Clear cover must be positive.")
 
     @property
     def b(self) -> float:

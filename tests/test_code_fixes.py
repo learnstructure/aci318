@@ -76,16 +76,17 @@ def test_beam_high_shear_auto_design_passes():
     code = ACI318_19()
 
     beam = Beam(section=sec, code=code, stirrup_bar_size="#3", stirrup_legs=2)
-    # Vu = 42 kips, Mu = 1200 kip-in
-    # Vc ~ 20.7 kips, phi*Vc ~ 15.5 kips.
-    # At s = 12 in: phi*Vs = 0.75 * (2 * 0.11 * 60 * 19.5 / 12) = 16.1 kips -> phi*Vn = 31.6 kips < 42 kips.
-    # Therefore, 12 in stirrups would fail, but a tighter spacing (e.g. s = 6.0 in) provides phi*Vn = 47.7 kips > 42 kips!
+    # Vu = 42 kips, Mu = 1200 kip-in, d = 19.5 in
+    # Designed stirrups satisfy Av,min, so Vc = 2 sqrt(f'c) bw d = 29.6 kips (Table 22.5.5.1(a)).
+    # At s = 12 in: phi*Vn = 0.75 * (29.6 + 2 * 0.11 * 60 * 19.5 / 12) = 38.3 kips < 42 kips.
+    # Vs,req = 42 / 0.75 - 29.6 = 26.4 kips -> s <= 0.22 * 60 * 19.5 / 26.4 = 9.75 in -> 9.5 in.
     loads = LoadEffects(Mu=1200.0, Vu=42.0)
     res = beam.design(loads)
 
     assert res.status in ("Passed", "Warning")
     assert res.status != "Failed"
-    assert res.required_shear_spacing <= 7.5
+    assert res.required_shear_spacing == 9.5
+    assert res.shear.demand_capacity_ratio <= 1.0
     assert res.provided_flexure_As > 0.0
 
 
@@ -222,3 +223,30 @@ def test_raft_foundation_design():
     assert res.one_way_shear.status == "Passed"
     assert res.required_As_bottom > 0.0
     assert res.required_As_top > 0.0
+
+
+
+def test_aci318_19_hook_development_length():
+    """F8: ACI 318-19 Eq. 25.4.3.1a for hooked bar development length."""
+    code = ACI318_19()
+    # #8 bar (db = 1.0 in), fc = 4.0 ksi, fy = 60.0 ksi
+    # Unconfined, not in column core (psi_r = 1.6, psi_o = 1.25) -> ~29.9 in
+    ldh_unconfined = code.get_hook_development_length(db=1.0, fy=60.0, fc=4.0, confined=False, in_column_core=False)
+    assert ldh_unconfined == pytest.approx(29.9, rel=1e-2)
+
+    # Confined, inside column core (psi_r = 1.0, psi_o = 1.0) -> ~14.95 in
+    ldh_confined = code.get_hook_development_length(db=1.0, fy=60.0, fc=4.0, confined=True, in_column_core=True)
+    assert ldh_confined == pytest.approx(14.95, rel=1e-2)
+
+
+def test_aci318_19_one_way_shear_vc_no_artificial_lower_bound():
+    """F9: Deep beam without stirrups follows Table 22.5.5.1(c) size effect without artificial 1.0*sqrt(fc) floor."""
+    code = ACI318_19()
+    # 12 x 44 in beam, d = 41 in, 2 #8 bars (As = 1.58 in^2), fc = 4.0 ksi, Av = 0
+    bw = 12.0
+    d = 41.0
+    rho_w = 1.58 / (bw * d)
+    vc = code.get_vc(f_c=4.0, b_w=bw, d=d, A_v=0.0, A_v_min=0.05, rho_w=rho_w)
+    phi_vc = 0.75 * vc
+    # Table 22.5.5.1(c): phi * Vc = 17.25 kip (with old 1.0*sqrt(fc) limit it was 23.34 kip)
+    assert phi_vc == pytest.approx(17.25, rel=1e-2)

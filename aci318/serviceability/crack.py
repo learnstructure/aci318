@@ -25,6 +25,13 @@ class CrackControlResult:
     messages: list[str]
 
 
+def _tension_fy(section) -> float:
+    """fy of the section's tension bars (ksi); a section without bars gives no service stress to assume."""
+    if not getattr(section, "layers", None):
+        raise ValueError("Crack control needs the service steel stress fs or the section's tension bars (fy).")
+    return section.layers[-1].steel.fy
+
+
 def check_crack_control_spacing(
     section: Union[RectangleSection, TBeamSection],
     fs: Optional[float] = None, # Steel stress at service load (ksi). Defaults to (2/3)*fy per §24.3.2.1
@@ -38,11 +45,8 @@ def check_crack_control_spacing(
         where fs is in psi, cc is in inches.
     """
     if fs is None:
-        # ACI 318-19 §24.3.2.1: fs may be taken as (2/3) * fy
-        fy = 60.0
-        if getattr(section, "layers", None):
-            fy = section.layers[-1].steel.fy
-        fs_calc = (2.0 / 3.0) * fy
+        # ACI 318-19 §24.3.2.1: fs may be taken as (2/3) * fy of the tension bars
+        fs_calc = (2.0 / 3.0) * _tension_fy(section)
     else:
         fs_calc = float(fs)
 
@@ -67,9 +71,7 @@ def verify_crack_control(
     otherwise uses fs or defaults to (2/3) * fy.
     """
     as_tens, d_tens = section.tension_steel
-    fy = 60.0
-    if getattr(section, "layers", None):
-        fy = section.layers[-1].steel.fy
+    fy = _tension_fy(section)
 
     if fs is not None:
         fs_eval = float(fs)

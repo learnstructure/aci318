@@ -14,12 +14,12 @@ Designed with a clean single-responsibility architecture, `aci318` provides auto
 
 - **Code Version Abstraction:** Seamless switching between code provisions (**ACI 318-19** and **ACI 318-25**).
 - **Structural Members:**
-  - **Beams:** Rectangular, T-Beam/Flanged, and Circular cross-sections under flexure, shear, and torsion.
-  - **Columns:** Compression/tension axial capacity, P-M interaction diagrams, ties/spirals, and **Biaxial P-M2-M3 Interaction** (Bresler Reciprocal Load Method §10.5.2 & Parme / Bresler Load Contour Method).
+  - **Beams:** Rectangular, T-Beam/Flanged, and Circular cross-sections under flexure, shear, and torsion. `Beam.design` accepts only tension-controlled layouts (ACI 318 §9.3.3.1, $\varepsilon_t \ge \varepsilon_{ty} + 0.003$) and, where $T_u > \phi T_{th}$, adds the longitudinal torsion steel $A_\ell$ (half per face) and sizes every outer stirrup leg for $A_v/(n s) + A_t/s$ (§9.5.4, §22.7).
+  - **Columns:** Compression/tension axial capacity, P-M interaction diagrams by strain compatibility (bars inside the stress block displace concrete, $P_{n,\max}$ cut-off), ACI 318-25 §21.2.2.3 $\phi$ limit between $0.10 f'_c A_g$ and $P_{n,bal}$, ties/spirals, symmetric perimeter bar patterns (`RectangleSection.setup_perimeter_bar_pattern`), and **Biaxial P-M2-M3 Interaction** (Bresler Reciprocal Load Method §10.5.2 & Parme / Bresler Load Contour Method). `Column.design` accepts a sequence of concurrent load sets and reports the governing one.
   - **Slabs:** One-way flexural design and minimum shrinkage/temperature reinforcement.
   - **Walls:** In-plane shear, flexure, and axial capacity checks.
   - **Foundations:**
-    - `IsolatedFooting`: Spread footing design with allowable soil bearing pressure checks, 1-way shear, 2-way punching shear (with size effect $\lambda_s$), and orthogonal flexural reinforcement.
+    - `IsolatedFooting`: Spread footing design with the allowable soil bearing pressure checked under service-level loads (`design(loads, service_loads=...)`, §13.3.1.1 with R13.2.6.1; `size_isolated_footing` sizes the base area for them), strength for the factored loads: 1-way shear, 2-way punching shear (with size effect $\lambda_s$ and the moment-transfer stress $\gamma_v M_{sc}$ of §8.4.4.2.3 about both axes), and orthogonal flexural reinforcement.
     - `StripFooting`: Continuous wall footing designer per linear foot of wall length, checking bearing capacity, one-way shear at distance $d$ from wall face, and transverse/longitudinal steel.
     - `CombinedFooting`: Two-column combined rectangular footing coordinator aligning footing centroid with resultant load, evaluating punching shear at both columns, critical one-way beam shear, and zero-shear longitudinal flexure.
     - `PileCap`: Multi-pile cap foundation coordinator evaluating individual pile reactions under combined P-M-M, two-way punching shear around column and individual piles, one-way beam shear, and orthogonal flexural reinforcement.
@@ -31,9 +31,14 @@ Designed with a clean single-responsibility architecture, `aci318` provides auto
   - Multi-condition deflection solver (`calculate_beam_deflection`) evaluating immediate live and total long-term deflections against ACI 318 Table 24.2.2 limits ($L/360, L/240$).
   - Crack control verification (`verify_crack_control`) checking bar spacing against ACI 318-19 §24.3.2 with service steel stress calculation.
 - **Strength Engines:** Independent, modular engines for flexure, shear, torsion, axial, P-M interaction, development length, and lap splices.
-  - Rigorous standard hook development length $l_{dh}$ with lightweight factor $\lambda$ in denominator per ACI 318-19 §25.4.3.1.
+  - Standard hook development length $l_{dh}$ per ACI 318-25 §25.4.3.1, $f_y \psi_e \psi_s \psi_{cc} \psi_r d_b / 50\lambda\sqrt{f'_c}$ (psi), as printed in the inch-pound edition (`references/ACI-318-25- US unit.pdf`). The SI coefficient (21) printed in ACI 318M-25 is a misprint.
+  - Lightweight factor $\lambda$ from aggregate composition or equilibrium density (Table 19.2.4.1).
+  - Table 20.2.2.4 limits: $f_y \le 80$ ksi in $P_o$ and $A_{s,min}$; $f_{yt} \le 60$ ksi for shear and torsion.
+- **Slenderness (`aci318.strength.slenderness`):** ACI 318-25 §6.6.4 stability index $Q$, sway magnifier $\delta_s$ (≤ 1.5 for Eq. (a)), $(EI)_{eff}$, $P_c$, $C_m$, member magnifier $\delta$, and $M_{2,min}$. `struct_agent` applies them to analysis results.
+- **Moment frames (`aci318.seismic`):** ACI 318-25 Chapter 18 checks for special (§18.6–18.8), intermediate (§18.4) and ordinary (§18.3) frames: beam and column dimension and steel limits, capacity-design shear from $M_{pr}$ or $M_n$ ($V_c = 0$ where §18.6.5.2 / §18.7.6.2.1 apply), hoop spacing and Table 18.7.5.4 confinement, strong-column/weak-beam $\Sigma M_{nc} \ge 1.2 \Sigma M_{nb}$, and joint shear. Every frame gets Chapter 15 joint shear (Table 15.5.2.1, §15.3.1 trigger). Not covered: circular columns and the §18.7.3.3 alternative.
 - **Section Optimization:** `BeamSectionOptimizer` searches dimension grids to minimize total material cost ($/ft) balancing concrete volume and rebar weight.
 - **Reinforcement Detailing:** Structured schemas for bar placements, stirrup/tie spacing, and clear covers.
+- **Clear cover on the section:** `RectangleSection`, `CircularSection` and `TBeamSection` carry `cover` (in, default 1.5 in per Table 20.5.1.3.1 for members not exposed to weather or in contact with ground). Bar placement, beam effective depth ($d = h - c_c - d_{stirrup} - d_b/2$), column bar spacing, and the Chapter 18 confinement and capacity checks read it.
 - **Engineering Reports:** Clean ASCII text calculation summaries and publication-ready Markdown design reports.
 - **Units & Utilities:** Built-in unit converters supporting US Customary (`in`, `ft`, `kip`, `ksi`) and Metric/SI (`mm`, `m`, `kN`, `MPa`).
 
@@ -56,6 +61,7 @@ aci318/
 ├── detailing/      # Rebar placement & layout schemas
 ├── reports/        # Text and Markdown calculation report generators
 ├── database/       # Standard rebar database (ASTM #3 through #18)
+├── seismic/        # Chapter 18 moment-frame and Chapter 15 joint checks
 ├── results/        # Dataclasses storing demand/capacity calculations
 ├── serviceability/ # Crack width, deflection, and vibration evaluation
 ├── validators/     # Input & geometry sanity checks
@@ -167,13 +173,28 @@ print("\n".join(markdown_output.split("\n")[:15]))
 
 `aci318` provides the `design_from_core` adapter function that reads a `struct_core.Project` or `AnalysisResult` (including governing force envelopes across multiple load combinations produced by `fem2d` / `fem3d`) and automatically runs code design checks and detailing generation:
 
+- **Materials come from each member's section, nothing is assumed.** A designed section names its `ConcreteMaterial` (f'c, E, density for λ), its longitudinal and transverse `RebarMaterial` (fy and fyt, Es) and its clear `cover`; a missing one raises a `ValueError` listing every incomplete section. The values flow to flexure, shear, torsion, P–M interaction, joints and the Chapter 18 checks (capacity design with $1.25 f_y$, confinement with $f_{yt}$).
+- **Footings** are designed only when `allowable_bearing_pressure` (model pressure unit), `footing_cover` (model length unit) and `service_analysis_results` (one result per service-level combination) are given: the base area for the allowable pressure under the service reactions, the footing for strength under the factored ones (§13.3.1.1, R13.2.6.1), with the concrete and bars of the column it carries.
+- `DesignResult.inputs` records the materials, sections and foundation inputs the design used.
+
+- **Columns** are checked against every load combination and station separately (`analysis_result_to_load_sets`), so each axial force is paired with its own moments; axial tension (solver convention, tension positive) becomes a negative $P_u$. Longitudinal steel is designed (`aci318.members.column_reinforcement`): the lightest layout of equal #6–#11 bars in a symmetric perimeter pattern, between 1 % $A_g$ and the maximum of §10.6.1.1 (8 %) or, for special moment frames, §18.7.4.1 (6 %), whose axial and P–M strength carry every load set. Each face's bar spacing is ≤ 14 in, so that with crossties $h_x \le 14$ in (§18.7.5.2(e)), and the clear spacing is ≥ max(1.5 in, 1.5 $d_b$) (§25.2.3). In special moment frames the bars of columns at joints failing strong-column/weak-beam (§18.7.3.2) are then raised until $\Sigma M_{nc} \ge 1.2\,\Sigma M_{nb}$ or the 6 % limit is reached (`aci318.seismic.strong_column`).
+- **Beams** are designed for the envelope (`analysis_result_to_load_effects`) with the most tensile concurrent axial force.
+- Beam ductility (§9.3.3.1) and torsion (§22.7) are reported as `code_checks` and count toward the governing DCR.
+- **Frame checks:** the frame system comes from `Project.seismic_basis` (`rc_smf`, `rc_imf`, `rc_omf`; anything else is a gravity frame). Chapter 18 member checks go to each element's `code_checks`. Joint checks, plus the analysis checks carried by `AnalysisResult.code_checks` (slenderness, story drift, stability), go to `DesignResult.system_checks`. All of them enter the governing DCR. Joints of gravity frames with continuous beams use the factored-analysis moments (§15.4.2.1(a)); other joints use $M_n$ or $M_{pr}$.
+
 ```python
 from aci318.adapters import design_from_core
 
-# Reads enveloped analysis forces (max Pu, Mu, Vu) and populates DesignResult and DetailingResult
-design_res, detail_res = design_from_core(project, design_code="ACI 318-19")
-project.design_results["ACI318_19"] = design_res
-project.detailing_results["ACI318_19"] = detail_res
+# Reads the analysis forces and populates DesignResult and DetailingResult
+design_res, detail_res = design_from_core(project, design_code="ACI 318-25")
+
+# With footings: allowable soil pressure (model units, e.g. kPa) under service-level reactions
+design_res, detail_res = design_from_core(
+    project, design_code="ACI 318-25",
+    allowable_bearing_pressure=150.0, footing_cover=0.075, service_analysis_results=[d_plus_l, d_plus_07e],
+)
+project.design_results["ACI318_25"] = design_res
+project.detailing_results["ACI318_25"] = detail_res
 ```
 
 See [`examples/ecosystem_pipeline.py`](examples/ecosystem_pipeline.py) for a complete multi-package engineering workflow connecting `struct_core` + `struct_load` (ASCE 7-22 ELF) + `fem3d` (3D FEA & combinations) + `aci318` (reinforced concrete design) + `struct_draw` (CAD DXF drawings).

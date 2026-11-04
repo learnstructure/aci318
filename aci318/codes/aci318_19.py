@@ -32,11 +32,8 @@ class ACI318_19(DesignCode):
         Returns:
             float: Strength reduction factor phi.
         """
-        if abs(fy - 60.0) < 1e-3:
-            epsilon_ty = 0.002
-        else:
-            epsilon_ty = fy / 29000.0
-        epsilon_tc = epsilon_ty + 0.003
+        epsilon_ty = self.get_epsilon_ty(fy)
+        epsilon_tc = self.get_tension_controlled_strain(fy)
         phi_min = 0.75 if spiral else 0.65
         phi_max = 0.90
 
@@ -46,6 +43,48 @@ class ACI318_19(DesignCode):
             return phi_max
         else:
             return phi_min + (strain_t - epsilon_ty) * (phi_max - phi_min) / (epsilon_tc - epsilon_ty)
+
+    def get_epsilon_ty(self, fy: float = 60.0) -> float:
+        """
+        Yield strain of deformed reinforcement (§21.2.2.1): fy / Es, permitted as 0.002 for Grade 60.
+
+        Args:
+            fy: Steel yield strength in ksi.
+        """
+        return 0.002 if abs(fy - 60.0) < 1e-3 else fy / 29000.0
+
+    def get_tension_controlled_strain(self, fy: float = 60.0) -> float:
+        """
+        Net tensile strain limit for tension-controlled sections, epsilon_ty + 0.003 (Table 21.2.2).
+
+        Args:
+            fy: Steel yield strength in ksi.
+        """
+        return self.get_epsilon_ty(fy) + 0.003
+
+    def get_phi_axial_flexure(
+        self,
+        strain_t: float,
+        pn: float,
+        pn_low: float,
+        pn_bal: float,
+        spiral: bool = False,
+        fy: float = 60.0,
+    ) -> float:
+        """
+        Strength reduction factor for combined moment and axial force (§21.2.2).
+
+        ACI 318-19 determines phi from the net tensile strain only.
+
+        Args:
+            strain_t: Net tensile strain in the extreme tension steel.
+            pn: Nominal axial strength at the evaluated point (kip, compression positive).
+            pn_low: 0.10 * f'c * Ag (kip).
+            pn_bal: Nominal axial strength at the balanced strain condition (kip).
+            spiral: True if member has spiral reinforcement.
+            fy: Steel yield strength in ksi.
+        """
+        return self.get_phi_flexure(strain_t, spiral=spiral, fy=fy)
 
     def get_phi_shear(self) -> float:
         """
@@ -105,29 +144,36 @@ class ACI318_19(DesignCode):
 
     def get_lambda_(self, concrete: Any) -> float:
         """
-        Get lightweight concrete modification factor lambda (ACI 318-19 §19.2.4).
-        
+        Get lightweight concrete modification factor lambda (ACI 318-19/-25 §19.2.4).
+
+        - Normalweight concrete: lambda = 1.0 (§19.2.4.3).
+        - 'sand-lightweight' / 'all-lightweight': by aggregate composition, Table 19.2.4.1(b)
+          (0.85 / 0.75).
+        - 'lightweight': by equilibrium density w_c [pcf], Table 19.2.4.1(a):
+          w_c <= 100: 0.75;  100 < w_c <= 135: 0.0075 w_c <= 1.0;  w_c > 135: 1.0.
+
         Args:
-            concrete: Concrete material object.
-            
+            concrete: Concrete material object (``concrete_type`` and ``density`` in pcf).
+
         Returns:
-            float: lambda modification factor (1.0 for normal weight).
+            float: lambda modification factor.
         """
-        if hasattr(concrete, "concrete_type"):
-            ct = str(concrete.concrete_type).lower()
-            if "lightweight" in ct:
-                if "sand" in ct:
-                    return 0.85
+        ct = str(concrete.concrete_type).lower().replace("_", "-")
+        if ct == "normalweight":
+            return 1.0
+        if "sand" in ct:
+            return 0.85
+        if "all" in ct:
+            return 0.75
+        if ct == "lightweight":
+            w_c = float(concrete.density)
+            if w_c <= 100.0:
                 return 0.75
-
-        if hasattr(concrete, "density"):
-            w_c = concrete.density  # in pcf
-            if w_c < 115.0:
-                return 0.75
-            elif w_c < 135.0:
-                return 0.85
-
-        return 1.0
+            return min(0.0075 * w_c, 1.0)
+        raise ValueError(
+            f"Unknown concrete_type '{concrete.concrete_type}'. Use 'normalweight', 'sand-lightweight', "
+            "'all-lightweight', or 'lightweight' (lambda from equilibrium density, Table 19.2.4.1(a))."
+        )
 
     def get_minimum_steel_ratio(self, f_c: float = 4.0, f_y: float = 60.0) -> float:
         """
@@ -144,7 +190,7 @@ class ACI318_19(DesignCode):
             float: Minimum steel ratio.
         """
         f_c_psi = f_c * 1000.0
-        f_y_psi = f_y * 1000.0
+        f_y_psi = min(f_y, 80.0) * 1000.0  # fy limited to 80,000 psi (§9.6.1.2)
         return max(3.0 * math.sqrt(f_c_psi) / f_y_psi, 200.0 / f_y_psi)
 
     def get_vc(
@@ -206,12 +252,6 @@ class ACI318_19(DesignCode):
         # ACI 318-19 §22.5.5.1.1: Upper limit Vc <= 5.0 * lambda * sqrt(f'c) * bw * d
         vc_max = (5.0 * lambda_val * math.sqrt(f_c_psi) * b_w * d) / 1000.0
         Vc = min(Vc, vc_max)
-
-        # ACI 318-19 §22.5.5.1.1: Vc need not be taken less than 1.0 * lambda * sqrt(f'c) * bw * d
-        # except in cases of net axial tension (N_u < 0)
-        if N_u >= 0.0:
-            vc_min = (1.0 * lambda_val * math.sqrt(f_c_psi) * b_w * d) / 1000.0
-            Vc = max(Vc, vc_min)
 
         return max(Vc, 0.0)
 
@@ -287,6 +327,15 @@ class ACI318_19(DesignCode):
         t_cr_lbs_in = 4.0 * lambda_val * sqrt_fc * (Acp ** 2 / max(pcp, 1.0)) * axial_factor
         return t_cr_lbs_in / 1000.0
 
+    def get_reinforcement_grade_factor(self, fy: float) -> float:
+        """Reinforcement grade factor psi_g (ACI 318-19 Table 25.4.3.2)."""
+        if fy <= 60.0 + 1e-3:
+            return 1.0
+        elif fy <= 80.0 + 1e-3:
+            return 1.15
+        else:
+            return 1.30
+
     def get_hook_development_length(
         self,
         db: float,
@@ -294,17 +343,26 @@ class ACI318_19(DesignCode):
         fc: float,
         lambda_val: float = 1.0,
         is_epoxy: bool = False,
+        confined: bool = False,
+        in_column_core: bool = False,
+        **kwargs: Any,
     ) -> float:
         """
-        Get standard 90/180-degree hook development length ldh in inches (ACI 318-19 §25.4.3.1).
+        Get standard 90/180-degree hook development length ldh in inches (ACI 318-19 §25.4.3.1, Eq. 25.4.3.1a).
         
         Equation:
-            ldh = (0.02 * psi_e * fy * db) / (lambda * sqrt(f'c)) >= max(8*db, 6.0 in)
+            ldh = [fy * psi_e * psi_r * psi_o * psi_c * psi_g / (55 * lambda * sqrt(f'c))] * db^1.5
+            not less than max(8 * db, 6.0 in).
         """
         fc_psi = fc * 1000.0
         fy_psi = fy * 1000.0
         psi_e = 1.2 if is_epoxy else 1.0
-        denom = max(lambda_val, 0.5) * math.sqrt(fc_psi)
-        ldh = (0.02 * psi_e * fy_psi * db) / denom
+        psi_r = 1.0 if confined else 1.6
+        psi_o = 1.0 if in_column_core else 1.25
+        psi_c = min(fc_psi / 15000.0 + 0.6, 1.0)
+        psi_g = self.get_reinforcement_grade_factor(fy)
+
+        denom = 55.0 * max(lambda_val, 0.5) * math.sqrt(fc_psi)
+        ldh = (fy_psi * psi_e * psi_r * psi_o * psi_c * psi_g / denom) * (db ** 1.5)
         return max(ldh, 8.0 * db, 6.0)
 

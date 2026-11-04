@@ -1,4 +1,5 @@
 import math
+from typing import Optional
 from aci318.loads.load_effects import LoadEffects
 from aci318.results.torsion import TorsionResult
 from aci318.strength.base import StrengthChecker
@@ -15,9 +16,12 @@ class TorsionStrength(StrengthChecker):
         - ACI 318-19 §22.7.7.1: Cross-Sectional Dimension Limits for Torsion
     """
 
-    def __init__(self, section, code, fyt: float = 60.0) -> None:
+    def __init__(self, section, code, fyt: float, fy: Optional[float] = None) -> None:
+        """``fyt``: transverse, ``fy``: longitudinal torsion reinforcement (ksi; ``fy`` default: the section's
+        longitudinal bars)."""
         super().__init__(section, code)
-        self.fyt = fyt
+        self.fyt = min(fyt, 60.0)  # torsion reinforcement: fy, fyt limited to 60 ksi (Table 20.2.2.4(a))
+        self.fy = None if fy is None else min(fy, 60.0)
 
     def check(self, loads: LoadEffects) -> TorsionResult:
         """
@@ -40,13 +44,14 @@ class TorsionStrength(StrengthChecker):
         fc = self.section.concrete.fc
         fc_psi = fc * 1000.0
 
-        cover = 1.5
+        cover = self.section.cover
         stirrup_db = 0.375
-        fy = 60.0
         fyt = self.fyt
-
-        if self.section.layers:
-            fy = self.section.layers[-1].steel.fy
+        fy = self.fy
+        if fy is None:
+            if not self.section.layers:
+                raise ValueError("Torsion check needs the longitudinal reinforcement fy (fy, or the section's bars).")
+            fy = min(self.section.layers[-1].steel.fy, 60.0)  # Table 20.2.2.4(a)
 
         Acp = b * h
         pcp = 2.0 * b + 2.0 * h
@@ -87,7 +92,8 @@ class TorsionStrength(StrengthChecker):
 
         # Cross-sectional dimension limit check (§22.7.7.1)
         # sqrt((Vu / (bw * d))^2 + (Tu * ph / (1.7 * Aoh^2))^2) <= phi * (Vc / (bw * d) + 8 * sqrt(f'c))
-        d = self.section.tension_steel[1] if self.section.tension_steel[1] > 0.0 else h - 2.5
+        # Before bars are placed: inside the cover, a stirrup and half a bar (1.0 in)
+        d = self.section.tension_steel[1] if self.section.tension_steel[1] > 0.0 else h - cover - 1.0
         vu_psi = (Vu * 1000.0) / (b * d)
         tu_psi_in = (Tu * 1000.0)
         torsion_stress_psi = (tu_psi_in * ph) / (1.7 * (Aoh ** 2))

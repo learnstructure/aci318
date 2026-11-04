@@ -1,7 +1,11 @@
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 from aci318.materials.concrete import Concrete
 from aci318.materials.steel import Steel
+
+# Clear cover to the transverse reinforcement (in) of a section that names none: ACI 318-25 Table 20.5.1.3.1, beams
+# and columns not exposed to weather or in contact with ground. A design takes its section's own cover.
+DEFAULT_COVER = 1.5
 
 @dataclass
 class RebarLayer:
@@ -24,12 +28,17 @@ class RectangleSection:
     h: float                   # Height of the section (in)
     concrete: Concrete         # Concrete material
     layers: List[RebarLayer] = field(default_factory=list) # List of longitudinal reinforcement layers
+    # (bars_per_b_face, bars_per_h_face, bar_size, cover, tie_bar_size, steel) set by setup_perimeter_bar_pattern
+    bar_pattern: Optional[tuple] = field(default=None, repr=False)
+    cover: float = DEFAULT_COVER  # Clear cover to the transverse reinforcement (in)
 
     def __post_init__(self) -> None:
         if self.b <= 0:
             raise ValueError("Section width b must be positive.")
         if self.h <= 0:
             raise ValueError("Section height h must be positive.")
+        if self.cover <= 0:
+            raise ValueError("Clear cover must be positive.")
 
     @property
     def gross_area(self) -> float:
@@ -146,13 +155,84 @@ class RectangleSection:
 
         self.layers.append(RebarLayer(area, depth, steel, num_bars, bar_size))
 
+    def setup_perimeter_bar_pattern(
+        self,
+        num_bars: int,
+        bar_size: str,
+        cover: Optional[float] = None,
+        tie_bar_size: str = "#3",
+        steel: Steel = None,
+    ) -> None:
+        """
+        Arrange ``num_bars`` equal bars around the perimeter of a tied column (ACI 318 §10.7.3.1:
+        at least 4 bars in a rectangular arrangement).
+
+        Four corner bars are placed first; the remaining bars are split between the faces in
+        proportion to their lengths, symmetric about both axes. Layers are stored by depth for
+        bending about the axis parallel to ``b`` (section depth ``h``).
+
+        Args:
+            num_bars: Total number of longitudinal bars (even, >= 4).
+            bar_size: Bar size designation (e.g. '#8').
+            cover: Clear cover to the ties in inches (default: the section's ``cover``).
+            tie_bar_size: Tie bar size designation.
+            steel: Steel material object.
+        """
+        if steel is None:
+            raise ValueError("Steel material must be specified.")
+        n_b, n_h = self.perimeter_bar_counts(num_bars)
+        self._place_perimeter_bars(n_b, n_h, bar_size, self.cover if cover is None else cover, tie_bar_size, steel)
+
+    def perimeter_bar_counts(self, num_bars: int) -> Tuple[int, int]:
+        """
+        Bars on each b-face and on each h-face (corners included) for ``num_bars`` perimeter bars.
+
+        Four corner bars come first; the intermediate bars are split between the faces in proportion
+        to their lengths, symmetric about both axes.
+        """
+        if num_bars < 4 or num_bars % 2 != 0:
+            raise ValueError("A rectangular tied column needs an even number of bars, at least 4.")
+        intermediate = (num_bars - 4) // 2  # intermediate bars on one b-face plus one h-face
+        on_b = int(round(intermediate * self.b / (self.b + self.h)))
+        return 2 + on_b, 2 + (intermediate - on_b)
+
+    def _place_perimeter_bars(
+        self, n_b: int, n_h: int, bar_size: str, cover: float, tie_bar_size: str, steel: Steel
+    ) -> None:
+        """Place ``n_b`` bars on each b-face and ``n_h`` bars on each h-face (corners shared)."""
+        from aci318.database.bars import Rebar
+
+        bar = Rebar(bar_size=bar_size)
+        edge = cover + Rebar(bar_size=tie_bar_size).diameter + bar.diameter / 2.0
+        if self.h - 2.0 * edge <= 0.0 or self.b - 2.0 * edge <= 0.0:
+            raise ValueError("Section is too small for the cover, tie, and bar size.")
+
+        self.layers = [
+            RebarLayer(area=n_b * bar.area, depth=edge, steel=steel, num_bars=n_b, bar_size=bar_size)
+        ]
+        spacing = (self.h - 2.0 * edge) / (n_h - 1)
+        for i in range(1, n_h - 1):
+            self.layers.append(
+                RebarLayer(area=2 * bar.area, depth=edge + i * spacing, steel=steel, num_bars=2, bar_size=bar_size)
+            )
+        self.layers.append(
+            RebarLayer(area=n_b * bar.area, depth=self.h - edge, steel=steel, num_bars=n_b, bar_size=bar_size)
+        )
+        self.bar_pattern = (n_b, n_h, bar_size, cover, tie_bar_size, steel)
+
     def get_weak_axis_section(self) -> 'RectangleSection':
         """
         Return an equivalent RectangleSection oriented for bending about the weak axis (Y-axis).
         Swaps width and height (b_new = h, h_new = b) and maps perimeter rebar layers accordingly.
         """
+        if self.bar_pattern is not None:
+            n_b, n_h, bar_size, cover, tie_bar_size, steel = self.bar_pattern
+            weak = RectangleSection(b=self.h, h=self.b, concrete=self.concrete, cover=self.cover)
+            weak._place_perimeter_bars(n_h, n_b, bar_size, cover, tie_bar_size, steel)
+            return weak
+
         if not self.layers:
-            return RectangleSection(b=self.h, h=self.b, concrete=self.concrete, layers=[])
+            return RectangleSection(b=self.h, h=self.b, concrete=self.concrete, layers=[], cover=self.cover)
 
         # Estimate effective cover from existing rebar layers
         covers = [min(lyr.depth, self.h - lyr.depth) for lyr in self.layers if lyr.depth > 0]
@@ -169,5 +249,5 @@ class RectangleSection:
             RebarLayer(area=total_area / 2.0, depth=d1, steel=steel),
             RebarLayer(area=total_area / 2.0, depth=d2, steel=steel),
         ]
-        return RectangleSection(b=self.h, h=self.b, concrete=self.concrete, layers=weak_layers)
+        return RectangleSection(b=self.h, h=self.b, concrete=self.concrete, layers=weak_layers, cover=self.cover)
 

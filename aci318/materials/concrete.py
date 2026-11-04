@@ -9,7 +9,7 @@ class Concrete:
     """
     fc: float                  # Concrete compressive strength (ksi), e.g. 4.0
     density: float = 145.0     # Density of concrete in pcf (default 145.0 pcf for normal weight)
-    concrete_type: str = "normalweight" # e.g. "normalweight", "sand-lightweight", "all-lightweight"
+    concrete_type: str = "normalweight" # "normalweight", "sand-lightweight", "all-lightweight", or "lightweight" (lambda from density)
     max_strain: float = 0.003  # Maximum usable compressive strain (ACI 318-19 Section 22.2.2.1)
     _Ec: float = field(default=0.0, init=False) # Elastic modulus (ksi)
 

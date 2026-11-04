@@ -21,7 +21,7 @@ class TestStrengthModularity(unittest.TestCase):
         self.assertIn(result.status, {"Passed", "Warning"})
         self.assertGreater(result.demand_capacity_ratio, 0.0)
 
-        shear = ShearStrength(section=section, code=code)
+        shear = ShearStrength(section=section, code=code, av=0.22, s=12.0)
         shear_result = shear.check(loads=LoadEffects(Vu=30.0))
         self.assertIn(shear_result.status, {"Passed", "Warning"})
         self.assertGreater(shear_result.demand_capacity_ratio, 0.0)

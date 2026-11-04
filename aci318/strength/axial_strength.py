@@ -52,7 +52,7 @@ class AxialStrength(StrengthChecker):
                 demand_capacity_ratio=0.0,
             )
 
-        fy = self.section.layers[0].steel.fy
+        fy = min(self.section.layers[0].steel.fy, 80.0)  # fy limited to 80 ksi (§22.4.2.1)
         pn0 = 0.85 * fc * (Ag - Ast) + fy * Ast
         phi = self.code.get_phi_axial(compression=True, spiral=self.spiral)
         phi_pn0 = phi * pn0

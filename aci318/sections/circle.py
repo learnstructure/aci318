@@ -1,9 +1,9 @@
 import math
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 from aci318.materials.concrete import Concrete
 from aci318.materials.steel import Steel
-from aci318.sections.rectangle import RebarLayer
+from aci318.sections.rectangle import DEFAULT_COVER, RebarLayer
 
 
 @dataclass
@@ -15,14 +15,18 @@ class CircularSection:
         D: Overall diameter in inches.
         concrete: Concrete material object.
         layers: List of rebar layers or circular pattern bars.
+        cover: Clear cover to the transverse reinforcement in inches.
     """
     D: float
     concrete: Concrete
     layers: List[RebarLayer] = field(default_factory=list)
+    cover: float = DEFAULT_COVER  # Clear cover to the transverse reinforcement (in)
 
     def __post_init__(self) -> None:
         if self.D <= 0.0:
             raise ValueError(f"Circular section diameter D must be positive, got {self.D} in.")
+        if self.cover <= 0.0:
+            raise ValueError("Clear cover must be positive.")
 
     @property
     def h(self) -> float:
@@ -93,9 +97,10 @@ class CircularSection:
         self,
         num_bars: int,
         bar_size: str,
-        cover: float = 1.5,
+        cover: Optional[float] = None,
         tie_bar_size: str = "#3",
-        steel: Steel = None,
+        *,
+        steel: Steel,
     ) -> None:
         """
         Arrange num_bars equally spaced around a circular core.
@@ -103,19 +108,18 @@ class CircularSection:
         Args:
             num_bars: Total number of longitudinal bars (minimum 6 for circular columns per ACI 318).
             bar_size: Bar size designation (e.g. '#8').
-            cover: Clear cover to ties in inches.
+            cover: Clear cover to ties in inches (default: the section's ``cover``).
             tie_bar_size: Tie or spiral bar size designation.
-            steel: Steel material object.
+            steel: Steel of the longitudinal bars (required).
         """
         from aci318.database.bars import Rebar
 
         if num_bars < 4:
             raise ValueError("Circular section must have at least 4 longitudinal bars.")
-        if steel is None:
-            steel = Steel(fy=60.0)
 
         bar = Rebar(bar_size=bar_size)
         tie = Rebar(bar_size=tie_bar_size)
+        cover = self.cover if cover is None else cover
 
         r_core = (self.D / 2.0) - cover - tie.diameter - (bar.diameter / 2.0)
         if r_core <= 0.0:

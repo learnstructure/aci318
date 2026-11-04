@@ -71,7 +71,7 @@ def calculate_cracked_inertia(
 
     as_tens, d_tens = section.tension_steel
     if as_tens <= 0.0 or d_tens <= 0.0:
-        d_tens = max(h - 2.5, 1.0)
+        d_tens = max(h - section.cover - 1.0, 1.0)  # inside cover, stirrup, half a bar
         as_tens = 0.01 * bw * d_tens
 
     as_comp, d_comp = getattr(section, "compression_steel", (0.0, 0.0))

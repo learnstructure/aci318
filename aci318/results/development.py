@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List
+from typing import Any, List
 
 @dataclass
 class DevelopmentResult:
@@ -12,3 +12,4 @@ class DevelopmentResult:
     splice_length: float        # Required lap splice length (in)
     status: str
     messages: List[str] = field(default_factory=list)
+    defaults_applied: List[Any] = field(default_factory=list)

@@ -26,7 +26,8 @@ from typing import Dict, List, Tuple
 from struct_core import (
     BeamElement,
     DistributedLoad,
-    ElasticMaterial,
+    ConcreteMaterial,
+    RebarMaterial,
     LoadCase,
     MassSource,
     MassSourceFactor,
@@ -61,13 +62,15 @@ def build_rc_frame_model() -> Tuple[StructuralModel, List[int], List[int]]:
 
     model = StructuralModel(units="kN, m", story_elevations=[3.5, 7.0])
 
-    # Material: C30 Concrete (E = 30 GPa, unit_weight = 24 kN/m^3)
-    mat = ElasticMaterial(id="C30", E=30.0e6, nu=0.20, rho=2400.0, unit_weight=24.0)
-    model.materials.append(mat)
+    # Materials: C30 concrete (f'c = 30 MPa, E = 30 GPa, unit_weight = 24 kN/m^3) and Grade 60 reinforcement
+    mat = ConcreteMaterial(id="C30", fc=30.0e3, E=30.0e6, nu=0.20, rho=2400.0, unit_weight=24.0)
+    rebar = RebarMaterial(id="Gr60", fy=413.7e3, E=200.0e6, unit_weight=77.0)
+    model.materials.extend([mat, rebar])
 
-    # Sections: Columns (300x400 mm) & Beams (250x400 mm)
-    sec_col = RectangularSection(id="Col_300x400", b=0.30, h=0.40)
-    sec_bm = RectangularSection(id="Beam_250x400", b=0.25, h=0.40)
+    # Sections: Columns (300x400 mm) & Beams (250x400 mm), each with its concrete, bars and 40 mm clear cover
+    rc = dict(material_id=mat.id, rebar_material_id=rebar.id, transverse_rebar_material_id=rebar.id, cover=0.040)
+    sec_col = RectangularSection(id="Col_300x400", b=0.30, h=0.40, **rc)
+    sec_bm = RectangularSection(id="Beam_250x400", b=0.25, h=0.40, **rc)
     model.sections.extend([sec_col, sec_bm])
 
     # Nodes (18 total) and Supports (6 fixed at base)
@@ -95,7 +98,6 @@ def build_rc_frame_model() -> Tuple[StructuralModel, List[int], List[int]]:
                         name=f"C{elem_id}",
                         start_node=node_grid[(x, y, z_bot)],
                         end_node=node_grid[(x, y, z_top)],
-                        material_id=mat.id,
                         section_id=sec_col.id,
                         include_shear_deformation=True,
                     )
@@ -116,7 +118,6 @@ def build_rc_frame_model() -> Tuple[StructuralModel, List[int], List[int]]:
                         name=f"B{elem_id}",
                         start_node=node_grid[(x_coords[bay], y, z)],
                         end_node=node_grid[(x_coords[bay + 1], y, z)],
-                        material_id=mat.id,
                         section_id=sec_bm.id,
                         include_shear_deformation=True,
                     )
@@ -131,7 +132,6 @@ def build_rc_frame_model() -> Tuple[StructuralModel, List[int], List[int]]:
                     name=f"B{elem_id}",
                     start_node=node_grid[(x, y_coords[0], z)],
                     end_node=node_grid[(x, y_coords[1], z)],
-                    material_id=mat.id,
                     section_id=sec_bm.id,
                     include_shear_deformation=True,
                 )
@@ -246,7 +246,19 @@ def run_pipeline() -> Project:
     # -------------------------------------------------------------------------
     # 4. Code Design & Detailing (aci318)
     # -------------------------------------------------------------------------
-    design_res, detailing_res = design_from_core(project)
+    # Footings: allowable soil bearing pressure 150 kPa under the service-level (ASD) reactions, D + L and
+    # D + 0.7E (ASCE 7-22 §2.4.1), 75 mm cover (cast against earth)
+    service = [
+        superpose_results(case_results=project.analysis_results, factors=factors, output_case_id=combo_id)
+        for combo_id, factors in {
+            "D+L": {"DEAD": 1.0, "SuperDead": 1.0, "LIVE": 1.0},
+            "D+0.7E": {"DEAD": 1.0, "SuperDead": 1.0, "EQ_X": 0.7},
+            "D-0.7E": {"DEAD": 1.0, "SuperDead": 1.0, "EQ_X": -0.7},
+        }.items()
+    ]
+    design_res, detailing_res = design_from_core(
+        project, allowable_bearing_pressure=150.0, footing_cover=0.075, service_analysis_results=service
+    )
     project.design_results["ACI318_19"] = design_res
     project.detailing_results["ACI318_19"] = detailing_res
 

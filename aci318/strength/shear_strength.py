@@ -22,11 +22,26 @@ class ShearStrength(StrengthChecker):
             Vs_max = 8 * sqrt(f'c) * bw * d / 1000
     """
 
-    def __init__(self, section, code, av: float = 0.22, s: float = 12.0, fy_shear: float = 60.0) -> None:
+    def __init__(self, section, code, av: float = 0.0, s: float = 0.0, fy_shear: float = None) -> None:
         super().__init__(section, code)
         self.av = av
         self.s = s
-        self.fy_shear = fy_shear
+        if fy_shear is None:
+            fy_val = getattr(getattr(self.section, "transverse_steel", None), "fy", None)
+            if fy_val is None:
+                fy_val = getattr(getattr(self.section, "steel", None), "fy", None)
+            if fy_val is None and getattr(self.section, "layers", None):
+                for lyr in self.section.layers:
+                    if getattr(lyr, "steel", None) and getattr(lyr.steel, "fy", None):
+                        fy_val = lyr.steel.fy
+                        break
+            if fy_val is None:
+                if av > 0.0:
+                    raise ValueError("Shear reinforcement yield strength fy_shear must be specified when av > 0.")
+                fy_val = 60.0
+            fy_shear = fy_val
+        # Stirrups, ties, and hoops for shear: fyt limited to 60 ksi (Table 20.2.2.4(a))
+        self.fy_shear = min(fy_shear, 60.0)
 
     def check(self, loads: LoadEffects) -> ShearResult:
         """
@@ -40,16 +55,20 @@ class ShearStrength(StrengthChecker):
         """
         validate_load_effects(loads)
 
-        bw = getattr(self.section, "b_w", getattr(self.section, "b", 12.0))
+        bw = getattr(self.section, "b_w", getattr(self.section, "b", None))
+        if bw is None or bw <= 0.0:
+            raise ValueError(f"Section width bw must be defined and positive, got {bw!r}")
         h = self.section.h
         fc = self.section.concrete.fc
         fc_psi = fc * 1000.0
 
         As, d = self.section.tension_steel
-        if d <= 0.0:
-            d = max(h - 2.5, 1.0)
+        if d <= 0.0:  # before bars are placed: inside the cover, a stirrup and half a bar (1.0 in)
+            d = max(h - self.section.cover - 1.0, 1.0)
 
-        rho_w = As / (bw * d) if (bw * d) > 0 else 0.01
+        if (bw * d) <= 0.0:
+            raise ValueError(f"Section effective shear area (bw * d) must be positive, got bw={bw}, d={d}")
+        rho_w = As / (bw * d)
         Ag = getattr(self.section, "gross_area", bw * h)
         lambda_val = self.code.get_lambda_(self.section.concrete)
 

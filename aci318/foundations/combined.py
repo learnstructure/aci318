@@ -198,7 +198,32 @@ class CombinedFooting:
         phi_v = self.code.get_phi_shear()
         fc_psi = self.concrete.fc * 1000.0
 
-        # Concrete shear strength without shear reinforcement (ACI 318-19 Table 22.5.5.1)
+        # Longitudinal negative bending between columns at zero-shear section x0 = p1 / wu (designed first to determine rho_w)
+        x0_ft = p1 / wu_kip_per_ft
+        mu_neg_kipft = p1 * (x0_ft - x1_ft) - (wu_kip_per_ft * (x0_ft ** 2) / 2.0)
+        mu_neg_kipin = max(mu_neg_kipft * 12.0, 1.0)
+
+        as_min_long = 0.0018 * b_in * self.thickness
+        as_req_long = max(
+            mu_neg_kipin / max(0.90 * self.steel.fy * (d - 1.0), 1.0),
+            as_min_long,
+        )
+
+        num_top_bars = max(int(math.ceil(as_req_long / rebar.area)), 4)
+        as_prov_top = num_top_bars * rebar.area
+
+        sec_long = RectangleSection(b=b_in, h=self.thickness, concrete=self.concrete)
+        sec_long.add_rebar_layer(
+            area=as_prov_top,
+            depth=d,
+            steel=self.steel,
+            num_bars=num_top_bars,
+            bar_size=self.bar_size,
+        )
+        flex_res = FlexureStrength(sec_long, self.code).check(LoadEffects(Mu=mu_neg_kipin))
+
+        # Concrete shear strength without shear reinforcement (ACI 318-19 Table 22.5.5.1) using designed rho_w
+        rho_w_designed = as_prov_top / (b_in * d)
         vc_no_stirrup_kip = self.code.get_vc(
             f_c=self.concrete.fc,
             b_w=b_in,
@@ -208,7 +233,7 @@ class CombinedFooting:
             A_v=0.0,
             A_v_min=0.0,
             lambda_val=lambda_val,
-            rho_w=0.002,
+            rho_w=rho_w_designed,
         )
         phi_vc_no_stirrup = phi_v * vc_no_stirrup_kip
 
@@ -259,30 +284,6 @@ class CombinedFooting:
             messages=one_way_messages,
             demand_capacity_ratio=dcr_1way,
         )
-
-        # Longitudinal negative bending between columns at zero-shear section x0 = p1 / wu
-        x0_ft = p1 / wu_kip_per_ft
-        mu_neg_kipft = p1 * (x0_ft - x1_ft) - (wu_kip_per_ft * (x0_ft ** 2) / 2.0)
-        mu_neg_kipin = max(mu_neg_kipft * 12.0, 1.0)
-
-        as_min_long = 0.0018 * b_in * self.thickness
-        as_req_long = max(
-            mu_neg_kipin / max(0.90 * self.steel.fy * (d - 1.0), 1.0),
-            as_min_long,
-        )
-
-        num_top_bars = max(int(math.ceil(as_req_long / rebar.area)), 4)
-        as_prov_top = num_top_bars * rebar.area
-
-        sec_long = RectangleSection(b=b_in, h=self.thickness, concrete=self.concrete)
-        sec_long.add_rebar_layer(
-            area=as_prov_top,
-            depth=d,
-            steel=self.steel,
-            num_bars=num_top_bars,
-            bar_size=self.bar_size,
-        )
-        flex_res = FlexureStrength(sec_long, self.code).check(LoadEffects(Mu=mu_neg_kipin))
 
         # Bottom steel at cantilevers
         num_bot_bars = max(int(math.ceil(as_min_long / rebar.area)), 4)

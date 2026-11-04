@@ -1,7 +1,8 @@
 import copy
-from typing import Optional, Union
+from typing import Optional, Sequence, Union
 
 from aci318.codes.base import DesignCode
+from aci318.database.bars import Rebar
 from aci318.detailing.column import create_column_detail
 from aci318.loads.load_effects import LoadEffects
 from aci318.results.column import ColumnDesignResult
@@ -26,52 +27,68 @@ class Column:
         tie_bar_size: str = "#3",
         tie_spacing: float = 12.0,
         spiral: bool = False,
+        required_steel: Optional[float] = None,
+        fy_shear: float = 60.0,
     ) -> None:
+        """``required_steel`` is the longitudinal area the design calls for (in^2); by default the
+        §10.6.1.1 minimum of 0.01 Ag. ``fy_shear`` is the yield strength of the ties (ksi), limited to 60 ksi for
+        shear (Table 20.2.2.4(a))."""
         self.section = section
         self.code = code
         self.member_id = member_id
         self.tie_bar_size = tie_bar_size
         self.tie_spacing = tie_spacing
         self.spiral = spiral
+        self.required_steel = 0.01 * section.gross_area if required_steel is None else required_steel
+        self.fy_shear = min(fy_shear, 60.0)
 
-    def check(self, loads: LoadEffects) -> ColumnDesignResult:
+    def check(self, loads: Union[LoadEffects, Sequence[LoadEffects]]) -> ColumnDesignResult:
         """
         Evaluate structural capacity and demand-capacity ratios for given loads.
-        
+
         Args:
-            loads: LoadEffects object containing Pu (kip), Mu (kip-in), Vu (kip).
-            
+            loads: One LoadEffects object, or a sequence of concurrent load sets (see ``design``).
+
         Returns:
             ColumnDesignResult dataclass.
         """
         return self.design(loads)
 
-    def design(self, loads: LoadEffects) -> ColumnDesignResult:
+    def design(self, loads: Union[LoadEffects, Sequence[LoadEffects]]) -> ColumnDesignResult:
         """
         Coordinates axial, P-M interaction, and shear checks for the column member.
-        
+
         Args:
-            loads: LoadEffects object containing Pu (kip), Mu (kip-in), Vu (kip).
-            
+            loads: One LoadEffects object (Pu in kip, compression positive; Mu in kip-in; Vu in kip),
+                or a sequence of concurrent load sets, e.g. one per load combination and station.
+                Each set is checked on its own and the governing ratios are reported.
+
         Returns:
             ColumnDesignResult dataclass.
         """
-        validate_load_effects(loads)
+        load_sets = [loads] if isinstance(loads, LoadEffects) else list(loads)
+        if not load_sets:
+            raise ValueError("Column.design requires at least one load set.")
+        for item in load_sets:
+            validate_load_effects(item)
 
         axial_checker = AxialStrength(self.section, self.code, spiral=self.spiral)
-        axial_res = axial_checker.check(loads)
+        axial_res = axial_checker.check(max(load_sets, key=lambda item: item.Pu))
 
-        interaction_checker = InteractionStrength(self.section, self.code)
-        interaction_res = interaction_checker.check(loads)
+        interaction_checker = InteractionStrength(self.section, self.code, spiral=self.spiral)
+        interaction_res = interaction_checker.check_load_sets(load_sets)
 
-        shear_checker = ShearStrength(self.section, self.code, s=self.tie_spacing)
-        shear_res = shear_checker.check(loads)
+        av = 2 * Rebar(bar_size=self.tie_bar_size).area
+        shear_checker = ShearStrength(self.section, self.code, av=av, s=self.tie_spacing, fy_shear=self.fy_shear)
+        shear_res = max(
+            (shear_checker.check(item) for item in load_sets), key=lambda r: r.demand_capacity_ratio
+        )
 
         from aci318.results.flexure import FlexureResult
 
         provided_ast = sum(layer.area for layer in self.section.layers) if self.section.layers else 0.0
         flexure_mapped = FlexureResult(
-            required_steel=0.01 * self.section.gross_area,
+            required_steel=self.required_steel,
             provided_steel=provided_ast,
             neutral_axis=self.section.h / 2.0 if hasattr(self.section, "h") else 0.0,
             steel_strain=0.005,
@@ -97,7 +114,7 @@ class Column:
                 bar_size=lyr.bar_size or "#8",
                 count=lyr.num_bars or 1,
                 location="longitudinal",
-                cover=1.5,
+                cover=self.section.cover,
             )
             for i, lyr in enumerate(self.section.layers)
         ]
@@ -108,7 +125,7 @@ class Column:
                 count=1,
                 location="tie" if not self.spiral else "spiral",
                 spacing=self.tie_spacing,
-                cover=1.5,
+                cover=self.section.cover,
             )
         ]
         detailing_obj = create_column_detail(

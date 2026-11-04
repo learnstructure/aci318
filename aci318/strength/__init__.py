@@ -8,8 +8,10 @@ from .flexure_strength import FlexureStrength
 from .interaction_strength import InteractionStrength
 from .shear_strength import ShearStrength
 from .torsion_strength import TorsionStrength
+from . import slenderness
 
 __all__ = [
+    "slenderness",
     "StrengthChecker",
     "FlexureStrength",
     "ShearStrength",

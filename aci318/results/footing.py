@@ -30,6 +30,7 @@ class IsolatedFootingDesignResult:
     status: str = "Passed"               # "Passed", "Warning", or "Failed"
     messages: List[str] = field(default_factory=list)
     detailing: Optional[Any] = None
+    cover: float = 3.0                   # Clear cover of the footing bars (in)
 
 
 @dataclass

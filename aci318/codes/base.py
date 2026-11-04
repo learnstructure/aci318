@@ -14,6 +14,29 @@ class DesignCode(ABC):
         pass
 
     @abstractmethod
+    def get_epsilon_ty(self, fy: float = 60.0) -> float:
+        """Get the yield strain of deformed reinforcement (§21.2.2.1)."""
+        pass
+
+    @abstractmethod
+    def get_tension_controlled_strain(self, fy: float = 60.0) -> float:
+        """Get the net tensile strain limit of tension-controlled sections (Table 21.2.2)."""
+        pass
+
+    @abstractmethod
+    def get_phi_axial_flexure(
+        self,
+        strain_t: float,
+        pn: float,
+        pn_low: float,
+        pn_bal: float,
+        spiral: bool = False,
+        fy: float = 60.0,
+    ) -> float:
+        """Get phi for combined moment and axial force at a point of the P-M diagram (§21.2.2)."""
+        pass
+
+    @abstractmethod
     def get_phi_shear(self) -> float:
         """Get strength reduction factor (phi) for shear."""
         pass
@@ -93,6 +116,7 @@ class DesignCode(ABC):
         fc: float,
         lambda_val: float = 1.0,
         is_epoxy: bool = False,
+        **kwargs: Any,
     ) -> float:
         """Get standard 90/180-degree hook development length ldh in inches."""
         pass

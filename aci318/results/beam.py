@@ -34,4 +34,8 @@ class BeamDesignResult:
     messages: List[str] = field(default_factory=list)
     trial_section: Optional[Any] = None  # Non-mutating trial section with designed reinforcement
     detailing: Optional[Any] = None      # ReinforcementDetail detailing object
-    torsion: Optional[TorsionResult] = None
+    flexure: Optional[FlexureResult] = None  # Flexure check of the selected (or strongest fitting) layout
+    shear: Optional[ShearResult] = None      # Shear check with designed stirrups, or the Vs,max section limit
+    torsion: Optional[TorsionResult] = None  # Torsion check with the provided stirrups (None if Tu <= phi*Tth)
+    # ACI 318 §9.3.3.1: required tension-controlled strain / provided net tensile strain (> 1 fails)
+    ductility_ratio: Optional[float] = None

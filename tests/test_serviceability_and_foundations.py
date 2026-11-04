@@ -209,3 +209,89 @@ def test_isolated_footing_punching_size_effect():
     assert isinstance(res.detailing, IsolatedFootingDetail)
     assert res.punching_shear is not None
     assert res.punching_shear.phi_vn > 0.0
+
+
+def test_footing_sized_for_service_loads_and_bearing_checked_with_them():
+    """ACI 318-25 R13.2.6.1: base area from the allowable pressure under service loads; the factored load only
+    designs the footing for strength."""
+    from aci318.codes.aci318_25 import ACI318_25
+    from aci318.foundations.isolated import size_isolated_footing
+
+    service = [LoadEffects(Pu=180.0), LoadEffects(Pu=150.0, Mu=600.0)]   # kip, kip-in
+    footing = size_isolated_footing(service, 3.0, 16.0, 16.0, Concrete(fc=4.0), Steel(fy=60.0), ACI318_25())
+    assert footing.length == footing.width == 8.0                       # sqrt(180 / 3) = 7.75 ft -> 8 ft
+    q_eccentric = 150.0 / 64.0 * (1.0 + 6.0 * (600.0 / 12.0 / 150.0) / 8.0)  # e = M / P inside the kern
+    pressures = [footing.soil_pressure(item)[1] for item in service]
+    assert max(pressures) == pytest.approx(q_eccentric)                  # 2.93 ksf <= 3 ksf: the eccentric set governs
+    result = footing.design(LoadEffects(Pu=260.0), service_loads=service)
+    assert result.max_bearing_pressure == pytest.approx(q_eccentric)     # service, not 260 / 64 = 4.06 ksf
+    assert result.status != "Failed" and result.cover == 3.0
+
+
+def test_beam_effective_depth_follows_the_section_cover():
+    """d = h - cover - stirrup - db/2: a larger cover leaves less lever arm, so more steel or a smaller phi Mn."""
+    from aci318.codes.aci318_25 import ACI318_25
+    from aci318.members.beam import Beam
+    from aci318.sections.rectangle import RectangleSection
+
+    def design(cover):
+        section = RectangleSection(b=12.0, h=24.0, concrete=Concrete(fc=4.0), cover=cover)
+        return Beam(section=section, code=ACI318_25()).design(LoadEffects(Mu=2000.0, Vu=20.0))
+
+    for cover in (1.5, 3.0):
+        result = design(cover)
+        n, size = result.suggested_bars.split()
+        db = {"#6": 0.75, "#7": 0.875, "#8": 1.0}[size]
+        assert result.trial_section.tension_steel[1] == pytest.approx(24.0 - cover - 0.375 - db / 2.0)
+
+
+def test_hook_development_confined_core_vs_default():
+    """M3: Confined hook in column core gives 14.95 in, unspecified gives 29.9 in with recorded defaults."""
+    code = ACI318_19()
+    steel = Steel(fy=60.0)
+    concrete = Concrete(fc=4.0)
+
+    # Confined in column core
+    res_confined = calculate_development_length(
+        bar_diameter=1.0, steel=steel, concrete=concrete, code=code, confined=True, in_column_core=True
+    )
+    assert pytest.approx(res_confined.ldh_hook, rel=1e-2) == 14.95
+    assert len(res_confined.defaults_applied) == 0
+
+    # Unspecified hook defaults
+    res_unspec = calculate_development_length(
+        bar_diameter=1.0, steel=steel, concrete=concrete, code=code
+    )
+    assert pytest.approx(res_unspec.ldh_hook, rel=1e-2) == 29.9
+    assert len(res_unspec.defaults_applied) == 2
+    default_names = {d.name for d in res_unspec.defaults_applied}
+    assert "hook_confined" in default_names
+    assert "hook_in_column_core" in default_names
+
+
+def test_footing_one_way_shear_uses_designed_rho_w():
+    """M3: Footing one-way shear uses designed flexural rho_w."""
+    conc = Concrete(fc=4.0)
+    steel = Steel(fy=60.0)
+    code = ACI318_19()
+
+    ftg = IsolatedFooting(
+        length=8.0, width=8.0, thickness=20.0,
+        col_c1=18.0, col_c2=18.0,
+        concrete=conc, steel=steel, code=code,
+        allowable_q=5.0,
+    )
+    res = ftg.design(LoadEffects(Pu=200.0))
+    from aci318.database.bars import Rebar
+    rebar = Rebar(bar_size=ftg.bar_size)
+    d = ftg.thickness - ftg.cover - rebar.diameter
+    bw_in = 8.0 * 12.0
+    # Number of bars in x direction
+    rebar_area = rebar.area
+    as_prov = max(int(math.ceil(res.required_As_x / rebar_area)), 4) * rebar_area
+    expected_rho_w = as_prov / (bw_in * d)
+    expected_vc = code.get_vc(
+        f_c=conc.fc, b_w=bw_in, d=d, N_u=0.0, A_g=bw_in * 20.0,
+        A_v=0.0, A_v_min=0.0, lambda_val=1.0, rho_w=expected_rho_w,
+    )
+    assert pytest.approx(res.one_way_shear.vn_concrete, rel=1e-3) == expected_vc

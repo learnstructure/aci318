@@ -52,6 +52,36 @@ class TestBeamDesign(unittest.TestCase):
         self.assertGreaterEqual(design_result.provided_flexure_As, design_result.required_flexure_As)
         self.assertGreater(design_result.required_shear_spacing, 0.0)
 
+        # Design results carry capacity checks: DCR = demand / phi*capacity of the selected layout
+        self.assertAlmostEqual(
+            design_result.flexure.demand_capacity_ratio, 2500.0 / design_result.flexure.phi_mn, places=6
+        )
+        self.assertLessEqual(design_result.flexure.demand_capacity_ratio, 1.0)
+        self.assertAlmostEqual(design_result.shear.demand_capacity_ratio, 30.0 / design_result.shear.phi_vn, places=6)
+
+    def test_beam_design_upsizes_stirrups_before_failing_shear(self):
+        """#3 stirrups would need s < 3 in; the design moves to #4 stirrups instead of failing."""
+        beam = Beam(section=RectangleSection(b=12.0, h=24.0, concrete=Concrete(fc=4.0)), code=ACI318_19())
+        res = beam.design(LoadEffects(Mu=1500.0, Vu=100.0))
+        self.assertIn(res.status, ("Passed", "Warning"))
+        self.assertEqual((res.stirrup_bar_size, res.stirrup_legs), ("#4", 2))
+        self.assertGreaterEqual(res.required_shear_spacing, 3.0)
+        self.assertLessEqual(res.shear.demand_capacity_ratio, 1.0)
+
+    def test_beam_design_reports_dcr_above_one_when_infeasible(self):
+        """An undersized beam must report DCR > 1 for the failing limit state, never 0."""
+        code = ACI318_19()
+        beam = Beam(section=RectangleSection(b=12.0, h=16.0, concrete=Concrete(fc=4.0)), code=code)
+
+        flexure_fail = beam.design(LoadEffects(Mu=6000.0, Vu=10.0))
+        self.assertEqual(flexure_fail.status, "Failed")
+        self.assertGreater(flexure_fail.flexure.demand_capacity_ratio, 1.0)
+
+        shear_fail = beam.design(LoadEffects(Mu=500.0, Vu=150.0))
+        self.assertEqual(shear_fail.status, "Failed")
+        self.assertLessEqual(shear_fail.flexure.demand_capacity_ratio, 1.0)
+        self.assertGreater(shear_fail.shear.demand_capacity_ratio, 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

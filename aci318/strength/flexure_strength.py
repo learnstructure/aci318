@@ -43,7 +43,9 @@ class FlexureStrength(StrengthChecker):
         beta_1 = self.code.get_beta_1(fc)
         epsilon_cu = getattr(self.section.concrete, "max_strain", 0.003)
 
-        b = getattr(self.section, "b_f", getattr(self.section, "b", 12.0))
+        b = getattr(self.section, "b_f", getattr(self.section, "b", None))
+        if b is None or b <= 0.0:
+            raise ValueError(f"Section width b must be defined and positive, got {b!r}")
         bw = getattr(self.section, "b_w", b)
         hf = getattr(self.section, "h_f", 0.0)
         h = self.section.h
@@ -61,9 +63,9 @@ class FlexureStrength(StrengthChecker):
                 demand_capacity_ratio=0.0,
             )
 
-        fy = self.section.layers[-1].steel.fy if self.section.layers else 60.0
-        Es = self.section.layers[-1].steel.Es if self.section.layers else 29000.0
-        epsilon_ty = fy / Es
+        if not self.section.layers:
+            raise ValueError("Section has no reinforcement layers defined.")
+        fy = self.section.layers[-1].steel.fy
 
         # Iterative or analytical solution for neutral axis depth c using strain compatibility
         # Objective function: F(c) = Concrete_compression + Steel_compression - Steel_tension = 0
@@ -140,9 +142,13 @@ class FlexureStrength(StrengthChecker):
         if As < min_As:
             status = "Warning"
             messages.append(f"Tension steel As ({As:.3f} in^2) is less than ACI minimum As_min ({min_As:.3f} in^2).")
-        if strain_t < 0.004:
+        eps_tc = self.code.get_tension_controlled_strain(fy)
+        if strain_t < eps_tc:
             status = "Warning"
-            messages.append(f"Net tensile strain strain_t ({strain_t:.5f}) is less than 0.004 (ductility warning).")
+            messages.append(
+                f"Net tensile strain {strain_t:.5f} < {eps_tc:.4f}: section is not tension-controlled "
+                "(required for beams and slabs, ACI 318 §9.3.3.1, §7.3.3.1, §8.3.3.1)."
+            )
 
         demand = max(loads.Mu, 0.0)
         capacity = max(phi_mn, 0.0)
@@ -164,4 +170,5 @@ class FlexureStrength(StrengthChecker):
             status=status,
             messages=messages,
             demand_capacity_ratio=ratio,
+            nominal_moment=mn,
         )

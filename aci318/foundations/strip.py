@@ -124,33 +124,7 @@ class StripFooting:
         lambda_val = self.code.get_lambda_(self.concrete)
         phi_v = self.code.get_phi_shear()
 
-        # Size effect and Vc for members without shear reinforcement (ACI 318-19 Table 22.5.5.1)
-        rho_est = max(0.0018 * self.thickness / d, 0.0015)
-        vc_kip = self.code.get_vc(
-            f_c=self.concrete.fc,
-            b_w=strip_b_in,
-            d=d,
-            N_u=0.0,
-            A_g=strip_b_in * self.thickness,
-            A_v=0.0,
-            A_v_min=0.0,
-            lambda_val=lambda_val,
-            rho_w=rho_est,
-        )
-        phi_vc = phi_v * vc_kip
-        dcr_shear = vu_kip / phi_vc if phi_vc > 0 else 0.0
-
-        shear_res = ShearResult(
-            vn_concrete=vc_kip,
-            vn_steel=0.0,
-            phi_vn=phi_vc,
-            required_spacing=0.0,
-            status="Passed" if dcr_shear <= 1.0 else "Failed",
-            messages=[] if dcr_shear <= 1.0 else [f"One-way shear DCR {dcr_shear:.2f} > 1.0."],
-            demand_capacity_ratio=dcr_shear,
-        )
-
-        # Transverse flexural moment at wall face
+        # Transverse flexural moment at wall face (designed first to determine rho_w)
         mu_kipin = (qu_psi * strip_b_in * (cant_in ** 2) / 2.0) / 1000.0
 
         # Minimum temperature/shrinkage reinforcement (ACI 318-19 §24.4.3.2)
@@ -181,6 +155,32 @@ class StripFooting:
             bar_size=self.transverse_bar_size,
         )
         flex_res = FlexureStrength(sec_strip, self.code).check(LoadEffects(Mu=mu_kipin))
+
+        # Size effect and Vc for members without shear reinforcement (ACI 318-19 Table 22.5.5.1) using designed rho_w
+        rho_w_designed = as_prov_per_ft / (strip_b_in * d)
+        vc_kip = self.code.get_vc(
+            f_c=self.concrete.fc,
+            b_w=strip_b_in,
+            d=d,
+            N_u=0.0,
+            A_g=strip_b_in * self.thickness,
+            A_v=0.0,
+            A_v_min=0.0,
+            lambda_val=lambda_val,
+            rho_w=rho_w_designed,
+        )
+        phi_vc = phi_v * vc_kip
+        dcr_shear = vu_kip / phi_vc if phi_vc > 0 else 0.0
+
+        shear_res = ShearResult(
+            vn_concrete=vc_kip,
+            vn_steel=0.0,
+            phi_vn=phi_vc,
+            required_spacing=0.0,
+            status="Passed" if dcr_shear <= 1.0 else "Failed",
+            messages=[] if dcr_shear <= 1.0 else [f"One-way shear DCR {dcr_shear:.2f} > 1.0."],
+            demand_capacity_ratio=dcr_shear,
+        )
 
         # Longitudinal temperature/shrinkage reinforcement across entire footing width
         total_b_in = self.width * 12.0

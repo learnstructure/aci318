@@ -14,3 +14,4 @@ class FlexureResult:
     status: str                 # "Passed", "Warning", or "Failed"
     messages: List[str] = field(default_factory=list) # Design warnings or failure logs
     demand_capacity_ratio: float = 0.0
+    nominal_moment: float = 0.0  # Nominal bending strength Mn (kip-in)
